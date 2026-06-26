@@ -1,0 +1,58 @@
+APP_NAME := sharetrip
+CMD_PATH := ./cmd/sharetrip
+BIN_DIR := bin
+BIN_PATH := $(BIN_DIR)/$(APP_NAME)
+TOOLS_BIN := $(BIN_DIR)/tools
+COMPOSE_FILE := deploy/docker-compose.yml
+MIGRATIONS_DIR := migrations
+DATABASE_URL ?= postgres://postgres:password@localhost:6544/sharetrip?sslmode=disable
+E2E_BASE_URL ?= http://localhost:8080
+GOOSE := $(TOOLS_BIN)/goose
+GOOSE_VERSION := v3.26.0
+GOOSE_DRIVER := postgres
+
+.PHONY: deps fmt lint test build run up down migrate-up migrate-down migrate-status e2e check
+
+deps: $(GOOSE)
+	go mod tidy
+	go mod download
+
+fmt:
+	go fmt ./...
+
+lint:
+	go vet ./...
+
+test:
+	go test ./...
+
+build:
+	mkdir -p $(BIN_DIR)
+	go build -o $(BIN_PATH) $(CMD_PATH)
+
+run:
+	go run $(CMD_PATH)
+
+up:
+	docker compose -f $(COMPOSE_FILE) up -d
+
+down:
+	docker compose -f $(COMPOSE_FILE) down
+
+migrate-up: $(GOOSE)
+	$(GOOSE) -dir $(MIGRATIONS_DIR) $(GOOSE_DRIVER) "$(DATABASE_URL)" up
+
+migrate-down: $(GOOSE)
+	$(GOOSE) -dir $(MIGRATIONS_DIR) $(GOOSE_DRIVER) "$(DATABASE_URL)" down
+
+migrate-status: $(GOOSE)
+	$(GOOSE) -dir $(MIGRATIONS_DIR) $(GOOSE_DRIVER) "$(DATABASE_URL)" status
+
+e2e:
+	curl -fsS $(E2E_BASE_URL)/ready
+
+check: deps fmt lint test build
+
+$(GOOSE):
+	mkdir -p $(TOOLS_BIN)
+	GOBIN=$(abspath $(TOOLS_BIN)) go install github.com/pressly/goose/v3/cmd/goose@$(GOOSE_VERSION)
