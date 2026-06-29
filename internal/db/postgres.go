@@ -8,7 +8,7 @@ import (
 	"strconv"
 	"time"
 
-	"job4j.ru/go-lang-base/internal/config"
+	"job4j.ru/share-trip/internal/config"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 )

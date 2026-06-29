@@ -5,15 +5,24 @@ import (
 	"log/slog"
 	"net/http"
 	"time"
+
+	"job4j.ru/share-trip/internal/service"
 )
 
 type Pinger interface {
 	Ping(ctx context.Context) error
 }
 
-func NewRouter(db Pinger) http.Handler {
+type TripService interface {
+	CreateTrip(ctx context.Context, command service.CreateTripCommand) (service.Trip, error)
+	GetTripByID(ctx context.Context, id string) (service.Trip, error)
+}
+
+func NewRouter(db Pinger, tripService TripService) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/ready", readyHandler(db))
+	mux.HandleFunc("/trip/create", createTripHandler(tripService))
+	mux.HandleFunc("/trip/", getTripByIDHandler(tripService))
 	return mux
 }
 

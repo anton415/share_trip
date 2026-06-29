@@ -1,4 +1,4 @@
-module job4j.ru/go-lang-base
+module job4j.ru/share-trip
 
 go 1.26.2
 
