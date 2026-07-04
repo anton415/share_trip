@@ -8,8 +8,18 @@ import (
 	"strings"
 	"time"
 
+	"job4j.ru/share-trip/internal/domain"
 	"job4j.ru/share-trip/internal/service"
 )
+
+type publishTripRequest struct {
+	TripID   string `json:"tripId"`
+	ClientID string `json:"clientId"`
+}
+
+type publishTripResponse struct {
+	TripID string `json:"tripId"`
+}
 
 type createTripRequest struct {
 	DriverID       string    `json:"driverId"`
@@ -20,15 +30,15 @@ type createTripRequest struct {
 }
 
 type tripResponse struct {
-	ID             string             `json:"id"`
-	DriverID       string             `json:"driverId"`
-	FromPoint      string             `json:"fromPoint"`
-	ToPoint        string             `json:"toPoint"`
-	DepartureTime  time.Time          `json:"departureTime"`
-	AvailableSeats int                `json:"availableSeats"`
-	Status         service.TripStatus `json:"status"`
-	CreatedAt      time.Time          `json:"createdAt"`
-	UpdatedAt      time.Time          `json:"updatedAt"`
+	ID             string            `json:"id"`
+	DriverID       string            `json:"driverId"`
+	FromPoint      string            `json:"fromPoint"`
+	ToPoint        string            `json:"toPoint"`
+	DepartureTime  time.Time         `json:"departureTime"`
+	AvailableSeats int               `json:"availableSeats"`
+	Status         domain.TripStatus `json:"status"`
+	CreatedAt      time.Time         `json:"createdAt"`
+	UpdatedAt      time.Time         `json:"updatedAt"`
 }
 
 type errorResponse struct {
@@ -91,7 +101,7 @@ func getTripByIDHandler(trips TripService) http.HandlerFunc {
 	}
 }
 
-func newTripResponse(trip service.Trip) tripResponse {
+func newTripResponse(trip domain.Trip) tripResponse {
 	return tripResponse{
 		ID:             trip.ID,
 		DriverID:       trip.DriverID,
@@ -128,4 +138,33 @@ func writeError(w http.ResponseWriter, statusCode int, code string, message stri
 		Code:    code,
 		Message: message,
 	})
+}
+
+func publishTripHandler(trips TripService) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+
+		var request publishTripRequest
+		decoder := json.NewDecoder(r.Body)
+		decoder.DisallowUnknownFields()
+
+		if err := decoder.Decode(&request); err != nil {
+			writeError(w, http.StatusBadRequest, "VALIDATION_ERROR", "invalid request body")
+			return
+		}
+
+		tripID, err := trips.PublishTrip(r.Context(), service.PublishTripCommand{
+			TripID:   request.TripID,
+			ClientID: request.ClientID,
+		})
+		if err != nil {
+			handleServiceError(w, err)
+			return
+		}
+
+		writeJSON(w, http.StatusOK, publishTripResponse{TripID: tripID})
+	}
 }

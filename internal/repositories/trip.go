@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 
+	"job4j.ru/share-trip/internal/domain"
 	"job4j.ru/share-trip/internal/service"
 
 	"github.com/jackc/pgx/v5"
@@ -19,25 +20,24 @@ func NewPostgresTripRepository(pool *pgxpool.Pool) *PostgresTripRepository {
 	return &PostgresTripRepository{pool: pool}
 }
 
-func (r *PostgresTripRepository) CreateTrip(ctx context.Context, command service.CreateTripCommand) (service.Trip, error) {
-	tx, err := r.pool.Begin(ctx)
-	if err != nil {
-		return service.Trip{}, fmt.Errorf("begin transaction: %w", err)
-	}
-	defer tx.Rollback(ctx)
-
-	var trip service.Trip
+func (r *PostgresTripRepository) Create(
+	ctx context.Context,
+	tx pgx.Tx,
+	trip domain.Trip,
+) (domain.Trip, error) {
+	var created domain.Trip
 	var status string
 
-	err = tx.QueryRow(ctx, `
+	err := tx.QueryRow(ctx, `
 		INSERT INTO trips (
 			driver_id,
 			from_point,
 			to_point,
 			departure_time,
-			available_seats
+			available_seats,
+			status
 		)
-		VALUES ($1, $2, $3, $4, $5)
+		VALUES ($1, $2, $3, $4, $5, $6)
 		RETURNING
 			id::text,
 			driver_id::text,
@@ -49,12 +49,63 @@ func (r *PostgresTripRepository) CreateTrip(ctx context.Context, command service
 			created_at,
 			updated_at
 	`,
-		command.DriverID,
-		command.FromPoint,
-		command.ToPoint,
-		command.DepartureTime,
-		command.Seats,
+		trip.DriverID,
+		trip.FromPoint,
+		trip.ToPoint,
+		trip.DepartureTime,
+		trip.Seats,
+		trip.Status,
 	).Scan(
+		&created.ID,
+		&created.DriverID,
+		&created.FromPoint,
+		&created.ToPoint,
+		&created.DepartureTime,
+		&created.Seats,
+		&status,
+		&created.CreatedAt,
+		&created.UpdatedAt,
+	)
+	if err != nil {
+		return domain.Trip{}, fmt.Errorf("insert trip: %w", err)
+	}
+
+	created.Status = domain.TripStatus(status)
+
+	_, err = tx.Exec(ctx, `
+		INSERT INTO trip_history (trip_id, from_status, to_status)
+		VALUES ($1, NULL, $2)
+	`, created.ID, created.Status)
+	if err != nil {
+		return domain.Trip{}, fmt.Errorf("insert trip history: %w", err)
+	}
+
+	return created, nil
+}
+
+func (r *PostgresTripRepository) GetForUpdateByID(
+	ctx context.Context,
+	tx pgx.Tx,
+	id string,
+) (domain.Trip, error) {
+	var trip domain.Trip
+	var status string
+
+	err := tx.QueryRow(ctx, `
+		SELECT
+			id::text,
+			driver_id::text,
+			from_point,
+			to_point,
+			departure_time,
+			available_seats,
+			status::text,
+			created_at,
+			updated_at
+		FROM trips
+		WHERE id = $1
+		FOR UPDATE
+	`, id).Scan(
 		&trip.ID,
 		&trip.DriverID,
 		&trip.FromPoint,
@@ -65,29 +116,104 @@ func (r *PostgresTripRepository) CreateTrip(ctx context.Context, command service
 		&trip.CreatedAt,
 		&trip.UpdatedAt,
 	)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return domain.Trip{}, service.ErrNotFound
+	}
 	if err != nil {
-		return service.Trip{}, fmt.Errorf("insert trip: %w", err)
+		return domain.Trip{}, fmt.Errorf("get trip by id for update: %w", err)
 	}
 
-	trip.Status = service.TripStatus(status)
-
-	_, err = tx.Exec(ctx, `
-		INSERT INTO trip_history (trip_id, from_status, to_status)
-		VALUES ($1, NULL, $2)
-	`, trip.ID, service.TripStatusDraft)
-	if err != nil {
-		return service.Trip{}, fmt.Errorf("insert trip history: %w", err)
-	}
-
-	if err := tx.Commit(ctx); err != nil {
-		return service.Trip{}, fmt.Errorf("commit transaction: %w", err)
-	}
+	trip.Status = domain.TripStatus(status)
 
 	return trip, nil
 }
 
-func (r *PostgresTripRepository) GetTripByID(ctx context.Context, id string) (service.Trip, error) {
-	var trip service.Trip
+func (r *PostgresTripRepository) Update(
+	ctx context.Context,
+	tx pgx.Tx,
+	trip domain.Trip,
+) (domain.Trip, error) {
+	var updated domain.Trip
+	var status string
+
+	err := tx.QueryRow(ctx, `
+		WITH old_trip AS (
+			SELECT status
+			FROM trips
+			WHERE id = $1
+		),
+		updated_trip AS (
+			UPDATE trips
+			SET
+				driver_id = $2,
+				from_point = $3,
+				to_point = $4,
+				departure_time = $5,
+				available_seats = $6,
+				status = $7::trip_status,
+				updated_at = NOW()
+			WHERE id = $1
+			RETURNING
+				id::text,
+				driver_id::text,
+				from_point,
+				to_point,
+				departure_time,
+				available_seats,
+				status::text,
+				created_at,
+				updated_at
+		),
+		history AS (
+			INSERT INTO trip_history (trip_id, from_status, to_status)
+			SELECT updated_trip.id::uuid, old_trip.status, updated_trip.status::trip_status
+			FROM updated_trip, old_trip
+			WHERE old_trip.status <> updated_trip.status::trip_status
+		)
+		SELECT
+			id,
+			driver_id,
+			from_point,
+			to_point,
+			departure_time,
+			available_seats,
+			status,
+			created_at,
+			updated_at
+		FROM updated_trip
+	`,
+		trip.ID,
+		trip.DriverID,
+		trip.FromPoint,
+		trip.ToPoint,
+		trip.DepartureTime,
+		trip.Seats,
+		trip.Status,
+	).Scan(
+		&updated.ID,
+		&updated.DriverID,
+		&updated.FromPoint,
+		&updated.ToPoint,
+		&updated.DepartureTime,
+		&updated.Seats,
+		&status,
+		&updated.CreatedAt,
+		&updated.UpdatedAt,
+	)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return domain.Trip{}, service.ErrNotFound
+	}
+	if err != nil {
+		return domain.Trip{}, fmt.Errorf("update trip: %w", err)
+	}
+
+	updated.Status = domain.TripStatus(status)
+
+	return updated, nil
+}
+
+func (r *PostgresTripRepository) GetTripByID(ctx context.Context, id string) (domain.Trip, error) {
+	var trip domain.Trip
 	var status string
 
 	err := r.pool.QueryRow(ctx, `
@@ -115,13 +241,13 @@ func (r *PostgresTripRepository) GetTripByID(ctx context.Context, id string) (se
 		&trip.UpdatedAt,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return service.Trip{}, service.ErrNotFound
+		return domain.Trip{}, service.ErrNotFound
 	}
 	if err != nil {
-		return service.Trip{}, fmt.Errorf("get trip by id: %w", err)
+		return domain.Trip{}, fmt.Errorf("get trip by id: %w", err)
 	}
 
-	trip.Status = service.TripStatus(status)
+	trip.Status = domain.TripStatus(status)
 
 	return trip, nil
 }

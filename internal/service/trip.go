@@ -3,31 +3,18 @@ package service
 import (
 	"context"
 	"errors"
+	"fmt"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
+	"job4j.ru/share-trip/internal/domain"
 	"strings"
 	"time"
 )
 
 type TripRepository interface {
-	CreateTrip(ctx context.Context, command CreateTripCommand) (Trip, error)
-	GetTripByID(ctx context.Context, id string) (Trip, error)
-}
+	domain.TripRepository
 
-type TripStatus string
-
-const (
-	TripStatusDraft TripStatus = "draft"
-)
-
-type Trip struct {
-	ID            string
-	DriverID      string
-	FromPoint     string
-	ToPoint       string
-	DepartureTime time.Time
-	Seats         int
-	Status        TripStatus
-	CreatedAt     time.Time
-	UpdatedAt     time.Time
+	GetTripByID(ctx context.Context, id string) (domain.Trip, error)
 }
 
 type CreateTripCommand struct {
@@ -42,22 +29,41 @@ var ErrValidation = errors.New("validation error")
 var ErrNotFound = errors.New("not found")
 
 type TripService struct {
-	repo TripRepository
+	repo        TripRepository
+	pool        *pgxpool.Pool
+	tripUsecase *domain.TripUsecase
 }
 
-func NewTripService(repo TripRepository) *TripService {
-	return &TripService{repo: repo}
+func NewTripService(repo TripRepository, pool *pgxpool.Pool) *TripService {
+	return &TripService{
+		repo:        repo,
+		pool:        pool,
+		tripUsecase: domain.NewTripUsecase(repo),
+	}
 }
 
-func (s *TripService) CreateTrip(ctx context.Context, command CreateTripCommand) (Trip, error) {
+func (s *TripService) CreateTrip(ctx context.Context, command CreateTripCommand) (domain.Trip, error) {
 	if err := validateCreateTripCommand(command); err != nil {
-		return Trip{}, err
+		return domain.Trip{}, err
 	}
 
-	return s.repo.CreateTrip(ctx, command)
+	resp, err := tx(ctx, s.pool, func(tx pgx.Tx) (*domain.CreateTripResponse, error) {
+		return s.tripUsecase.CreateTrip(ctx, tx, domain.CreateTripRequest{
+			DriverID:      command.DriverID,
+			FromPoint:     command.FromPoint,
+			ToPoint:       command.ToPoint,
+			DepartureTime: command.DepartureTime,
+			Seats:         command.Seats,
+		})
+	})
+	if err != nil {
+		return domain.Trip{}, fmt.Errorf("create trip transaction: %w", err)
+	}
+
+	return resp.Trip, nil
 }
 
-func (s *TripService) GetTripByID(ctx context.Context, id string) (Trip, error) {
+func (s *TripService) GetTripByID(ctx context.Context, id string) (domain.Trip, error) {
 	return s.repo.GetTripByID(ctx, id)
 }
 
@@ -83,4 +89,30 @@ func validateCreateTripCommand(command CreateTripCommand) error {
 	}
 
 	return nil
+}
+
+type PublishTripCommand struct {
+	TripID   string
+	ClientID string
+}
+
+func (s *TripService) PublishTrip(ctx context.Context, command PublishTripCommand) (string, error) {
+	if strings.TrimSpace(command.TripID) == "" {
+		return "", errors.Join(ErrValidation, errors.New("trip_id is required"))
+	}
+	if strings.TrimSpace(command.ClientID) == "" {
+		return "", errors.Join(ErrValidation, errors.New("client_id is required"))
+	}
+
+	resp, err := tx(ctx, s.pool, func(tx pgx.Tx) (*domain.PublishTripResponse, error) {
+		return s.tripUsecase.PublishTrip(ctx, tx, domain.PublishTripRequest{
+			TripID:   command.TripID,
+			ClientID: command.ClientID,
+		})
+	})
+	if err != nil {
+		return "", fmt.Errorf("publish trip transaction: %w", err)
+	}
+
+	return resp.TripID, nil
 }

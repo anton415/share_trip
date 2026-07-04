@@ -25,7 +25,7 @@ func main() {
 	log.Println("connected to PostgreSQL")
 
 	tripRepository := repositories.NewPostgresTripRepository(pool)
-	tripService := service.NewTripService(tripRepository)
+	tripService := service.NewTripService(tripRepository, pool)
 
 	addr := config.Env("HTTP_ADDR", ":8080")
 	server := &http.Server{
