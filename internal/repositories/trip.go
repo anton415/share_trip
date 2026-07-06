@@ -212,6 +212,30 @@ func (r *PostgresTripRepository) Update(
 	return updated, nil
 }
 
+func (r *PostgresTripRepository) CreateOutboxEvent(
+	ctx context.Context,
+	tx pgx.Tx,
+	event domain.OutboxEvent,
+) error {
+	_, err := tx.Exec(ctx, `
+		INSERT INTO outbox_event (
+			event_name,
+			aggregate_id,
+			payload
+		)
+		VALUES ($1, $2, $3)
+	`,
+		event.EventName,
+		event.AggregateID,
+		event.Payload,
+	)
+	if err != nil {
+		return fmt.Errorf("insert outbox event: %w", err)
+	}
+
+	return nil
+}
+
 func (r *PostgresTripRepository) GetTripByID(ctx context.Context, id string) (domain.Trip, error) {
 	var trip domain.Trip
 	var status string

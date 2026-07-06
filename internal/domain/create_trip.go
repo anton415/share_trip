@@ -23,6 +23,7 @@ type TripRepository interface {
 	Create(ctx context.Context, tx pgx.Tx, trip Trip) (Trip, error)
 	GetForUpdateByID(ctx context.Context, tx pgx.Tx, id string) (Trip, error)
 	Update(ctx context.Context, tx pgx.Tx, trip Trip) (Trip, error)
+	CreateOutboxEvent(ctx context.Context, tx pgx.Tx, event OutboxEvent) error
 }
 
 type TripUsecase struct {
