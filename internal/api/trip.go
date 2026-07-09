@@ -3,25 +3,25 @@ package api
 import (
 	"encoding/json"
 	"errors"
+	"github.com/gofiber/fiber/v2"
+	"job4j.ru/share-trip/internal/domain"
+	"job4j.ru/share-trip/internal/service"
 	"log/slog"
 	"net/http"
 	"strings"
 	"time"
-
-	"job4j.ru/share-trip/internal/domain"
-	"job4j.ru/share-trip/internal/service"
 )
 
-type publishTripRequest struct {
+type PublishTripRequest struct {
 	TripID   string `json:"tripId"`
 	ClientID string `json:"clientId"`
 }
 
-type publishTripResponse struct {
+type PublishTripResponse struct {
 	TripID string `json:"tripId"`
 }
 
-type createTripRequest struct {
+type CreateTripRequest struct {
 	DriverID       string    `json:"driverId"`
 	FromPoint      string    `json:"fromPoint"`
 	ToPoint        string    `json:"toPoint"`
@@ -29,7 +29,7 @@ type createTripRequest struct {
 	AvailableSeats int       `json:"availableSeats"`
 }
 
-type tripResponse struct {
+type CreateTripResponse struct {
 	ID             string            `json:"id"`
 	DriverID       string            `json:"driverId"`
 	FromPoint      string            `json:"fromPoint"`
@@ -53,7 +53,7 @@ func createTripHandler(trips TripService) http.HandlerFunc {
 			return
 		}
 
-		var request createTripRequest
+		var request CreateTripRequest
 		decoder := json.NewDecoder(r.Body)
 		decoder.DisallowUnknownFields()
 
@@ -101,8 +101,8 @@ func getTripByIDHandler(trips TripService) http.HandlerFunc {
 	}
 }
 
-func newTripResponse(trip domain.Trip) tripResponse {
-	return tripResponse{
+func newTripResponse(trip domain.Trip) CreateTripResponse {
+	return CreateTripResponse{
 		ID:             trip.ID,
 		DriverID:       trip.DriverID,
 		FromPoint:      trip.FromPoint,
@@ -147,7 +147,7 @@ func publishTripHandler(trips TripService) http.HandlerFunc {
 			return
 		}
 
-		var request publishTripRequest
+		var request PublishTripRequest
 		decoder := json.NewDecoder(r.Body)
 		decoder.DisallowUnknownFields()
 
@@ -165,6 +165,91 @@ func publishTripHandler(trips TripService) http.HandlerFunc {
 			return
 		}
 
-		writeJSON(w, http.StatusOK, publishTripResponse{TripID: tripID})
+		writeJSON(w, http.StatusOK, PublishTripResponse{TripID: tripID})
 	}
+}
+
+func (s *Server) createTrip(c *fiber.Ctx) error {
+	var request CreateTripRequest
+
+	if err := c.BodyParser(&request); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(errorResponse{
+			Code:    "VALIDATION_ERROR",
+			Message: "invalid request body",
+		})
+	}
+
+	trip, err := s.trips.CreateTrip(c.Context(), service.CreateTripCommand{
+		DriverID:      request.DriverID,
+		FromPoint:     request.FromPoint,
+		ToPoint:       request.ToPoint,
+		DepartureTime: request.DepartureTime,
+		Seats:         request.AvailableSeats,
+	})
+	if err != nil {
+		return writeFiberServiceError(c, err)
+	}
+
+	return c.Status(fiber.StatusCreated).JSON(newTripResponse(trip))
+}
+
+func writeFiberServiceError(c *fiber.Ctx, err error) error {
+	switch {
+	case errors.Is(err, service.ErrValidation):
+		return c.Status(fiber.StatusBadRequest).JSON(errorResponse{
+			Code:    "VALIDATION_ERROR",
+			Message: err.Error(),
+		})
+	case errors.Is(err, service.ErrNotFound):
+		return c.Status(fiber.StatusNotFound).JSON(errorResponse{
+			Code:    "NOT_FOUND",
+			Message: "trip not found",
+		})
+	default:
+		slog.Error("trip request failed", "error", err)
+		return c.Status(fiber.StatusInternalServerError).JSON(errorResponse{
+			Code:    "INTERNAL_ERROR",
+			Message: "internal server error",
+		})
+	}
+}
+
+func (s *Server) publishTrip(c *fiber.Ctx) error {
+	var request PublishTripRequest
+
+	if err := c.BodyParser(&request); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(errorResponse{
+			Code:    "VALIDATION_ERROR",
+			Message: "invalid request body",
+		})
+	}
+
+	tripID, err := s.trips.PublishTrip(c.Context(), service.PublishTripCommand{
+		TripID:   request.TripID,
+		ClientID: request.ClientID,
+	})
+	if err != nil {
+		return writeFiberServiceError(c, err)
+	}
+
+	return c.Status(fiber.StatusOK).JSON(PublishTripResponse{
+		TripID: tripID,
+	})
+}
+
+func (s *Server) getTripByID(c *fiber.Ctx) error {
+	tripID := c.Params("id")
+	if strings.TrimSpace(tripID) == "" {
+		return c.Status(fiber.StatusNotFound).JSON(errorResponse{
+			Code:    "NOT_FOUND",
+			Message: "trip not found",
+		})
+	}
+
+	trip, err := s.trips.GetTripByID(c.Context(), tripID)
+	if err != nil {
+		return writeFiberServiceError(c, err)
+	}
+
+	return c.Status(fiber.StatusOK).JSON(newTripResponse(trip))
 }

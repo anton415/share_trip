@@ -11,7 +11,7 @@ GOOSE := $(TOOLS_BIN)/goose
 GOOSE_VERSION := v3.26.0
 GOOSE_DRIVER := postgres
 
-.PHONY: deps fmt lint test build run up down migrate-up migrate-down migrate-status e2e check
+.PHONY: deps fmt lint test coverage build run up down migrate-up migrate-down migrate-status e2e check
 
 deps: $(GOOSE)
 	go mod tidy
@@ -25,6 +25,10 @@ lint:
 
 test:
 	go test ./...
+
+coverage:
+	go test ./... -coverprofile=coverage.out
+	go tool cover -func=coverage.out
 
 build:
 	mkdir -p $(BIN_DIR)
