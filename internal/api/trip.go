@@ -1,15 +1,15 @@
 package api
 
 import (
-	"encoding/json"
 	"errors"
-	"github.com/gofiber/fiber/v2"
-	"job4j.ru/share-trip/internal/domain"
-	"job4j.ru/share-trip/internal/service"
 	"log/slog"
-	"net/http"
 	"strings"
 	"time"
+
+	"github.com/gofiber/fiber/v2"
+
+	"job4j.ru/share-trip/internal/domain"
+	"job4j.ru/share-trip/internal/service"
 )
 
 type PublishTripRequest struct {
@@ -46,61 +46,6 @@ type errorResponse struct {
 	Message string `json:"message"`
 }
 
-func createTripHandler(trips TripService) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost {
-			w.WriteHeader(http.StatusMethodNotAllowed)
-			return
-		}
-
-		var request CreateTripRequest
-		decoder := json.NewDecoder(r.Body)
-		decoder.DisallowUnknownFields()
-
-		if err := decoder.Decode(&request); err != nil {
-			writeError(w, http.StatusBadRequest, "VALIDATION_ERROR", "invalid request body")
-			return
-		}
-
-		trip, err := trips.CreateTrip(r.Context(), service.CreateTripCommand{
-			DriverID:      request.DriverID,
-			FromPoint:     request.FromPoint,
-			ToPoint:       request.ToPoint,
-			DepartureTime: request.DepartureTime,
-			Seats:         request.AvailableSeats,
-		})
-		if err != nil {
-			handleServiceError(w, err)
-			return
-		}
-
-		writeJSON(w, http.StatusCreated, newTripResponse(trip))
-	}
-}
-
-func getTripByIDHandler(trips TripService) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet {
-			w.WriteHeader(http.StatusMethodNotAllowed)
-			return
-		}
-
-		tripID := strings.TrimPrefix(r.URL.Path, "/trip/")
-		if tripID == "" || strings.Contains(tripID, "/") {
-			writeError(w, http.StatusNotFound, "NOT_FOUND", "trip not found")
-			return
-		}
-
-		trip, err := trips.GetTripByID(r.Context(), tripID)
-		if err != nil {
-			handleServiceError(w, err)
-			return
-		}
-
-		writeJSON(w, http.StatusOK, newTripResponse(trip))
-	}
-}
-
 func newTripResponse(trip domain.Trip) CreateTripResponse {
 	return CreateTripResponse{
 		ID:             trip.ID,
@@ -112,60 +57,6 @@ func newTripResponse(trip domain.Trip) CreateTripResponse {
 		Status:         trip.Status,
 		CreatedAt:      trip.CreatedAt,
 		UpdatedAt:      trip.UpdatedAt,
-	}
-}
-
-func handleServiceError(w http.ResponseWriter, err error) {
-	switch {
-	case errors.Is(err, service.ErrValidation):
-		writeError(w, http.StatusBadRequest, "VALIDATION_ERROR", err.Error())
-	case errors.Is(err, service.ErrNotFound):
-		writeError(w, http.StatusNotFound, "NOT_FOUND", "trip not found")
-	default:
-		slog.Error("trip request failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "internal server error")
-	}
-}
-
-func writeJSON(w http.ResponseWriter, statusCode int, value any) {
-	w.Header().Set("Content-Type", "application/json; charset=utf-8")
-	w.WriteHeader(statusCode)
-	_ = json.NewEncoder(w).Encode(value)
-}
-
-func writeError(w http.ResponseWriter, statusCode int, code string, message string) {
-	writeJSON(w, statusCode, errorResponse{
-		Code:    code,
-		Message: message,
-	})
-}
-
-func publishTripHandler(trips TripService) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost {
-			w.WriteHeader(http.StatusMethodNotAllowed)
-			return
-		}
-
-		var request PublishTripRequest
-		decoder := json.NewDecoder(r.Body)
-		decoder.DisallowUnknownFields()
-
-		if err := decoder.Decode(&request); err != nil {
-			writeError(w, http.StatusBadRequest, "VALIDATION_ERROR", "invalid request body")
-			return
-		}
-
-		tripID, err := trips.PublishTrip(r.Context(), service.PublishTripCommand{
-			TripID:   request.TripID,
-			ClientID: request.ClientID,
-		})
-		if err != nil {
-			handleServiceError(w, err)
-			return
-		}
-
-		writeJSON(w, http.StatusOK, PublishTripResponse{TripID: tripID})
 	}
 }
 
@@ -200,10 +91,20 @@ func writeFiberServiceError(c *fiber.Ctx, err error) error {
 			Code:    "VALIDATION_ERROR",
 			Message: err.Error(),
 		})
-	case errors.Is(err, service.ErrNotFound):
+	case errors.Is(err, domain.ErrTripNotFound):
 		return c.Status(fiber.StatusNotFound).JSON(errorResponse{
 			Code:    "NOT_FOUND",
 			Message: "trip not found",
+		})
+	case errors.Is(err, domain.ErrForbidden):
+		return c.Status(fiber.StatusForbidden).JSON(errorResponse{
+			Code:    "FORBIDDEN",
+			Message: "forbidden",
+		})
+	case errors.Is(err, domain.ErrConflict):
+		return c.Status(fiber.StatusConflict).JSON(errorResponse{
+			Code:    "CONFLICT",
+			Message: "trip is not in draft status",
 		})
 	default:
 		slog.Error("trip request failed", "error", err)
@@ -228,6 +129,9 @@ func (s *Server) publishTrip(c *fiber.Ctx) error {
 		TripID:   request.TripID,
 		ClientID: request.ClientID,
 	})
+	if errors.Is(err, domain.ErrTripAlreadyPublished) {
+		return c.SendStatus(fiber.StatusNoContent)
+	}
 	if err != nil {
 		return writeFiberServiceError(c, err)
 	}

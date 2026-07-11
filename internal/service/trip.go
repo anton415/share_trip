@@ -26,7 +26,6 @@ type CreateTripCommand struct {
 }
 
 var ErrValidation = errors.New("validation error")
-var ErrNotFound = errors.New("not found")
 
 type TripService struct {
 	repo        TripRepository

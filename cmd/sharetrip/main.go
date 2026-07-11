@@ -3,8 +3,8 @@ package main
 import (
 	"context"
 	"log"
-	"net/http"
-	"time"
+
+	"github.com/gofiber/fiber/v2"
 
 	"job4j.ru/share-trip/internal/api"
 	"job4j.ru/share-trip/internal/config"
@@ -26,16 +26,14 @@ func main() {
 
 	tripRepository := repositories.NewPostgresTripRepository(pool)
 	tripService := service.NewTripService(tripRepository, pool)
+	server := api.NewServer(tripService, pool)
+	app := fiber.New()
+	server.Route(app.Group(""))
 
 	addr := config.Env("HTTP_ADDR", ":8080")
-	server := &http.Server{
-		Addr:              addr,
-		Handler:           api.NewRouter(pool, tripService),
-		ReadHeaderTimeout: 5 * time.Second,
-	}
 
 	log.Printf("listening on %s", addr)
-	if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+	if err := app.Listen(addr); err != nil {
 		log.Fatal(err)
 	}
 }

@@ -28,15 +28,29 @@ func (u *TripUsecase) PublishTrip(
 	}
 
 	if trip.DriverID != req.ClientID {
-		return nil, fmt.Errorf("forbidden: client %s is not driver of trip %s", req.ClientID, req.TripID)
+		return nil, fmt.Errorf(
+			"%w: client %s is not driver of trip %s",
+			ErrForbidden,
+			req.ClientID,
+			req.TripID,
+		)
 	}
 
 	if trip.Status == TripStatusPublished {
-		return &PublishTripResponse{TripID: trip.ID}, nil
+		return nil, fmt.Errorf(
+			"%w: trip %s",
+			ErrTripAlreadyPublished,
+			trip.ID,
+		)
 	}
 
 	if trip.Status != TripStatusDraft {
-		return nil, fmt.Errorf("invalid trip status: expected %s, got %s", TripStatusDraft, trip.Status)
+		return nil, fmt.Errorf(
+			"%w: invalid trip status: expected %s, got %s",
+			ErrConflict,
+			TripStatusDraft,
+			trip.Status,
+		)
 	}
 
 	trip.Status = TripStatusPublished

@@ -72,7 +72,7 @@ func TestMain(m *testing.M) {
 
 	tripRepository := repositories.NewPostgresTripRepository(testPool)
 	tripService := service.NewTripService(tripRepository, testPool)
-	server := api.NewServer(tripService)
+	server := api.NewServer(tripService, testPool)
 
 	testApp = fiber.New()
 	server.Route(testApp.Group(""))

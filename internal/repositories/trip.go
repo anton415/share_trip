@@ -6,7 +6,6 @@ import (
 	"fmt"
 
 	"job4j.ru/share-trip/internal/domain"
-	"job4j.ru/share-trip/internal/service"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -117,7 +116,7 @@ func (r *PostgresTripRepository) GetForUpdateByID(
 		&trip.UpdatedAt,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return domain.Trip{}, service.ErrNotFound
+		return domain.Trip{}, domain.ErrTripNotFound
 	}
 	if err != nil {
 		return domain.Trip{}, fmt.Errorf("get trip by id for update: %w", err)
@@ -201,7 +200,7 @@ func (r *PostgresTripRepository) Update(
 		&updated.UpdatedAt,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return domain.Trip{}, service.ErrNotFound
+		return domain.Trip{}, domain.ErrTripNotFound
 	}
 	if err != nil {
 		return domain.Trip{}, fmt.Errorf("update trip: %w", err)
@@ -265,7 +264,7 @@ func (r *PostgresTripRepository) GetTripByID(ctx context.Context, id string) (do
 		&trip.UpdatedAt,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return domain.Trip{}, service.ErrNotFound
+		return domain.Trip{}, domain.ErrTripNotFound
 	}
 	if err != nil {
 		return domain.Trip{}, fmt.Errorf("get trip by id: %w", err)
