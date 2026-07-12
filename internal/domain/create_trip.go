@@ -3,8 +3,12 @@ package domain
 import (
 	"context"
 	"fmt"
-	"github.com/jackc/pgx/v5"
+	"log/slog"
 	"time"
+
+	"github.com/jackc/pgx/v5"
+
+	"job4j.ru/share-trip/internal/observability/logctx"
 )
 
 type CreateTripRequest struct {
@@ -39,6 +43,13 @@ func (u *TripUsecase) CreateTrip(
 	tx pgx.Tx,
 	req CreateTripRequest,
 ) (*CreateTripResponse, error) {
+	logger := logctx.Logger(ctx).With(
+		slog.String("layer", "usecase"),
+		slog.String("usecase", "TripUsecase.CreateTrip"),
+	)
+
+	logger.Info("create trip usecase started")
+
 	trip, err := u.tripRepo.Create(ctx, tx, Trip{
 		DriverID:      req.DriverID,
 		FromPoint:     req.FromPoint,
@@ -48,8 +59,17 @@ func (u *TripUsecase) CreateTrip(
 		Status:        TripStatusDraft,
 	})
 	if err != nil {
+		logger.Error(
+			"repository create trip failed",
+			slog.Any("error", err),
+		)
 		return nil, fmt.Errorf("tripRepo.Create: %w", err)
 	}
+
+	logger.Info(
+		"create trip usecase completed",
+		slog.String("trip_id", trip.ID),
+	)
 
 	return &CreateTripResponse{
 		Trip: trip,

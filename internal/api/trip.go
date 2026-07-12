@@ -9,6 +9,7 @@ import (
 	"github.com/gofiber/fiber/v2"
 
 	"job4j.ru/share-trip/internal/domain"
+	"job4j.ru/share-trip/internal/observability/logctx"
 	"job4j.ru/share-trip/internal/service"
 )
 
@@ -61,16 +62,35 @@ func newTripResponse(trip domain.Trip) CreateTripResponse {
 }
 
 func (s *Server) createTrip(c *fiber.Ctx) error {
+	ctx := c.UserContext()
+
+	logger := logctx.Logger(ctx).With(
+		slog.String("server", "TripServer"),
+		slog.String("handler", "CreateTrip"),
+	)
+
 	var request CreateTripRequest
 
 	if err := c.BodyParser(&request); err != nil {
+		logger.Warn(
+			"create trip failed: invalid json body",
+			slog.Any("error", err),
+		)
 		return c.Status(fiber.StatusBadRequest).JSON(errorResponse{
 			Code:    "VALIDATION_ERROR",
 			Message: "invalid request body",
 		})
 	}
 
-	trip, err := s.trips.CreateTrip(c.Context(), service.CreateTripCommand{
+	logger = logger.With(
+		slog.String("client_id", request.DriverID),
+	)
+
+	ctx = logctx.WithLogger(ctx, logger)
+
+	logger.Info("create trip request accepted")
+
+	trip, err := s.trips.CreateTrip(ctx, service.CreateTripCommand{
 		DriverID:      request.DriverID,
 		FromPoint:     request.FromPoint,
 		ToPoint:       request.ToPoint,
@@ -78,8 +98,17 @@ func (s *Server) createTrip(c *fiber.Ctx) error {
 		Seats:         request.AvailableSeats,
 	})
 	if err != nil {
+		logger.Error(
+			"create trip failed",
+			slog.Any("error", err),
+		)
 		return writeFiberServiceError(c, err)
 	}
+
+	logger.Info(
+		"create trip completed",
+		slog.String("trip_id", trip.ID),
+	)
 
 	return c.Status(fiber.StatusCreated).JSON(newTripResponse(trip))
 }

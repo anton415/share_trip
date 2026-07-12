@@ -2,3 +2,4 @@
 .env
 configs/local.env
 coverage.out
+/logs/*.log

@@ -9,6 +9,10 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+
+	"log/slog"
+
+	"job4j.ru/share-trip/internal/observability/logctx"
 )
 
 type PostgresTripRepository struct {
@@ -24,6 +28,14 @@ func (r *PostgresTripRepository) Create(
 	tx pgx.Tx,
 	trip domain.Trip,
 ) (domain.Trip, error) {
+	logger := logctx.Logger(ctx).With(
+		slog.String("layer", "repository"),
+		slog.String("repository", "TripRepository"),
+		slog.String("operation", "Create"),
+	)
+
+	logger.Info("insert trip started")
+
 	var created domain.Trip
 	var status string
 
@@ -66,19 +78,32 @@ func (r *PostgresTripRepository) Create(
 		&created.UpdatedAt,
 	)
 	if err != nil {
+		logger.Error(
+			"insert trip failed",
+			slog.Any("error", err),
+		)
 		return domain.Trip{}, fmt.Errorf("insert trip: %w", err)
 	}
 
 	created.Status = domain.TripStatus(status)
+
+	logger = logger.With(
+		slog.String("trip_id", created.ID),
+	)
 
 	_, err = tx.Exec(ctx, `
 		INSERT INTO trip_history (trip_id, from_status, to_status)
 		VALUES ($1, NULL, $2)
 	`, created.ID, created.Status)
 	if err != nil {
+		logger.Error(
+			"insert trip history failed",
+			slog.Any("error", err),
+		)
 		return domain.Trip{}, fmt.Errorf("insert trip history: %w", err)
 	}
 
+	logger.Info("insert trip completed")
 	return created, nil
 }
 
