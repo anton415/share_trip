@@ -10,18 +10,20 @@ E2E_BASE_URL ?= http://localhost:8080
 GOOSE := $(TOOLS_BIN)/goose
 GOOSE_VERSION := v3.26.0
 GOOSE_DRIVER := postgres
+GOLANGCI_LINT := $(TOOLS_BIN)/golangci-lint
+GOLANGCI_LINT_VERSION := v2.11.3
 
 .PHONY: deps fmt lint test coverage build run up down migrate-up migrate-down migrate-status e2e check
 
-deps: $(GOOSE)
+deps: $(GOOSE) $(GOLANGCI_LINT)
 	go mod tidy
 	go mod download
 
 fmt:
 	go fmt ./...
 
-lint:
-	go vet ./...
+lint: $(GOLANGCI_LINT)
+	$(GOLANGCI_LINT) run ./...
 
 test:
 	go test ./...
@@ -60,3 +62,7 @@ check: deps fmt lint test build
 $(GOOSE):
 	mkdir -p $(TOOLS_BIN)
 	GOBIN=$(abspath $(TOOLS_BIN)) go install github.com/pressly/goose/v3/cmd/goose@$(GOOSE_VERSION)
+
+$(GOLANGCI_LINT):
+	mkdir -p $(TOOLS_BIN)
+	GOBIN=$(abspath $(TOOLS_BIN)) go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$(GOLANGCI_LINT_VERSION)

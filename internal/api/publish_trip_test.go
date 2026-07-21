@@ -22,7 +22,7 @@ func TestServer_PublishTrip(t *testing.T) {
 			TripID:   created.ID,
 			ClientID: created.DriverID,
 		})
-		defer publishResp.Body.Close()
+		defer closeResponseBody(t, publishResp.Body)
 
 		require.Equal(t, http.StatusOK, publishResp.StatusCode)
 
@@ -38,7 +38,7 @@ func TestServer_PublishTrip(t *testing.T) {
 
 		getResp, err := testApp.Test(getReq, -1)
 		require.NoError(t, err)
-		defer getResp.Body.Close()
+		defer closeResponseBody(t, getResp.Body)
 
 		require.Equal(t, http.StatusOK, getResp.StatusCode)
 
@@ -59,7 +59,7 @@ func TestServer_PublishTrip(t *testing.T) {
 			TripID:   created.ID,
 			ClientID: uuid.NewString(),
 		})
-		defer resp.Body.Close()
+		defer closeResponseBody(t, resp.Body)
 
 		require.Equal(t, http.StatusForbidden, resp.StatusCode)
 		requireErrorResponse(t, resp, "FORBIDDEN", "forbidden")
@@ -70,7 +70,7 @@ func TestServer_PublishTrip(t *testing.T) {
 			TripID:   uuid.NewString(),
 			ClientID: uuid.NewString(),
 		})
-		defer resp.Body.Close()
+		defer closeResponseBody(t, resp.Body)
 
 		require.Equal(t, http.StatusNotFound, resp.StatusCode)
 		requireErrorResponse(t, resp, "NOT_FOUND", "trip not found")
@@ -90,7 +90,7 @@ func TestServer_PublishTrip(t *testing.T) {
 			TripID:   created.ID,
 			ClientID: created.DriverID,
 		})
-		defer resp.Body.Close()
+		defer closeResponseBody(t, resp.Body)
 
 		require.Equal(t, http.StatusConflict, resp.StatusCode)
 		requireErrorResponse(t, resp, "CONFLICT", "trip is not in draft status")
@@ -108,7 +108,7 @@ func TestServer_PublishTrip(t *testing.T) {
 		require.NoError(t, firstResp.Body.Close())
 
 		secondResp := sendPublishTrip(t, payload)
-		defer secondResp.Body.Close()
+		defer closeResponseBody(t, secondResp.Body)
 
 		require.Equal(t, http.StatusNoContent, secondResp.StatusCode)
 		body, err := io.ReadAll(secondResp.Body)
@@ -146,7 +146,7 @@ func createDraftTrip(t *testing.T) api.CreateTripResponse {
 
 	resp, err := testApp.Test(req, -1)
 	require.NoError(t, err)
-	defer resp.Body.Close()
+	defer closeResponseBody(t, resp.Body)
 
 	require.Equal(t, http.StatusCreated, resp.StatusCode)
 
@@ -187,4 +187,12 @@ func requireErrorResponse(t *testing.T, resp *http.Response, code, message strin
 	require.NoError(t, json.NewDecoder(resp.Body).Decode(&got))
 	require.Equal(t, code, got.Code)
 	require.Equal(t, message, got.Message)
+}
+
+func closeResponseBody(t *testing.T, body io.Closer) {
+	t.Helper()
+
+	if err := body.Close(); err != nil {
+		t.Errorf("close response body: %v", err)
+	}
 }
