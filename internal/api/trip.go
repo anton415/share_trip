@@ -154,7 +154,7 @@ func (s *Server) publishTrip(c *fiber.Ctx) error {
 		})
 	}
 
-	tripID, err := s.trips.PublishTrip(c.Context(), service.PublishTripCommand{
+	tripID, err := s.trips.PublishTrip(c.UserContext(), service.PublishTripCommand{
 		TripID:   request.TripID,
 		ClientID: request.ClientID,
 	})
@@ -179,7 +179,7 @@ func (s *Server) getTripByID(c *fiber.Ctx) error {
 		})
 	}
 
-	trip, err := s.trips.GetTripByID(c.Context(), tripID)
+	trip, err := s.trips.GetTripByID(c.UserContext(), tripID)
 	if err != nil {
 		return writeFiberServiceError(c, err)
 	}

@@ -32,13 +32,15 @@ func NewServer(trips TripService, db Pinger) *Server {
 
 func (s *Server) Route(router fiber.Router) {
 	router.Get("/ready", s.ready)
-	router.Post("/trip/create", s.createTrip)
-	router.Post("/trip/publish", s.publishTrip)
-	router.Get("/trip/:id", s.getTripByID)
+
+	trips := router.Group("/trip")
+	trips.Post("/create", s.createTrip)
+	trips.Post("/publish", s.publishTrip)
+	trips.Get("/:id", s.getTripByID)
 }
 
 func (s *Server) ready(c *fiber.Ctx) error {
-	ctx, cancel := context.WithTimeout(c.Context(), 3*time.Second)
+	ctx, cancel := context.WithTimeout(c.UserContext(), 3*time.Second)
 	defer cancel()
 
 	if err := s.db.Ping(ctx); err != nil {

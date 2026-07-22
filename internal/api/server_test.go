@@ -75,7 +75,7 @@ func TestMain(m *testing.M) {
 	server := api.NewServer(tripService, testPool)
 
 	testApp = fiber.New()
-	server.Route(testApp.Group(""))
+	server.Route(testApp)
 
 	code := m.Run()
 

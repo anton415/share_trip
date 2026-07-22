@@ -40,7 +40,7 @@ func main() {
 	server := api.NewServer(tripService, pool)
 	app := fiber.New()
 	app.Use(middleware.Correlation(logger))
-	server.Route(app.Group(""))
+	server.Route(app)
 
 	addr := config.Env("HTTP_ADDR", ":8080")
 
