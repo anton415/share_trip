@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/google/uuid"
 
 	"job4j.ru/share-trip/internal/domain"
 	"job4j.ru/share-trip/internal/observability/logctx"
@@ -154,9 +155,18 @@ func (s *Server) publishTrip(c *fiber.Ctx) error {
 		})
 	}
 
-	tripID, err := s.trips.PublishTrip(c.UserContext(), service.PublishTripCommand{
-		TripID:   request.TripID,
-		ClientID: request.ClientID,
+	tripID, tripIDErr := uuid.Parse(request.TripID)
+	clientID, clientIDErr := uuid.Parse(request.ClientID)
+	if tripIDErr != nil || clientIDErr != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(errorResponse{
+			Code:    "VALIDATION_ERROR",
+			Message: "invalid request body",
+		})
+	}
+
+	publishedTripID, err := s.trips.PublishTrip(c.UserContext(), service.PublishTripCommand{
+		TripID:   tripID,
+		ClientID: clientID,
 	})
 	if errors.Is(err, domain.ErrTripAlreadyPublished) {
 		return c.SendStatus(fiber.StatusNoContent)
@@ -166,7 +176,7 @@ func (s *Server) publishTrip(c *fiber.Ctx) error {
 	}
 
 	return c.Status(fiber.StatusOK).JSON(PublishTripResponse{
-		TripID: tripID,
+		TripID: publishedTripID,
 	})
 }
 

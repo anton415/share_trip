@@ -15,6 +15,38 @@ import (
 )
 
 func TestServer_PublishTrip(t *testing.T) {
+	t.Run("validation error - идентификаторы должны быть UUID", func(t *testing.T) {
+		tests := []struct {
+			name    string
+			payload api.PublishTripRequest
+		}{
+			{
+				name: "invalid trip id",
+				payload: api.PublishTripRequest{
+					TripID:   "not-a-uuid",
+					ClientID: uuid.NewString(),
+				},
+			},
+			{
+				name: "invalid client id",
+				payload: api.PublishTripRequest{
+					TripID:   uuid.NewString(),
+					ClientID: "",
+				},
+			},
+		}
+
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				resp := sendPublishTrip(t, tt.payload)
+				defer closeResponseBody(t, resp.Body)
+
+				require.Equal(t, http.StatusBadRequest, resp.StatusCode)
+				requireErrorResponse(t, resp, "VALIDATION_ERROR", "invalid request body")
+			})
+		}
+	})
+
 	t.Run("success - перевод поездки из draft в published", func(t *testing.T) {
 		created := createDraftTrip(t)
 

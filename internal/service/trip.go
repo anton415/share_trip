@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"job4j.ru/share-trip/internal/domain"
@@ -124,22 +125,15 @@ func validateCreateTripCommand(command CreateTripCommand) error {
 }
 
 type PublishTripCommand struct {
-	TripID   string
-	ClientID string
+	TripID   uuid.UUID
+	ClientID uuid.UUID
 }
 
 func (s *TripService) PublishTrip(ctx context.Context, command PublishTripCommand) (string, error) {
-	if strings.TrimSpace(command.TripID) == "" {
-		return "", errors.Join(ErrValidation, errors.New("trip_id is required"))
-	}
-	if strings.TrimSpace(command.ClientID) == "" {
-		return "", errors.Join(ErrValidation, errors.New("client_id is required"))
-	}
-
 	resp, err := tx(ctx, s.pool, func(tx pgx.Tx) (*domain.PublishTripResponse, error) {
 		return s.tripUsecase.PublishTrip(ctx, tx, domain.PublishTripRequest{
-			TripID:   command.TripID,
-			ClientID: command.ClientID,
+			TripID:   command.TripID.String(),
+			ClientID: command.ClientID.String(),
 		})
 	})
 	if err != nil {
