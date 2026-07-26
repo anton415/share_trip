@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"job4j.ru/share-trip/internal/api"
+	"job4j.ru/share-trip/internal/domain"
 )
 
 func TestServer_PublishTrip(t *testing.T) {
@@ -63,7 +64,9 @@ func TestServer_PublishTrip(t *testing.T) {
 
 		var published api.PublishTripResponse
 		require.NoError(t, json.Unmarshal(publishRespBody, &published))
-		require.Equal(t, created.ID, published.TripID)
+		require.Equal(t, api.PublishTripResponse{
+			TripID: created.ID,
+		}, published)
 
 		getReq, err := http.NewRequest(http.MethodGet, "/trip/"+created.ID, nil)
 		require.NoError(t, err)
@@ -79,9 +82,14 @@ func TestServer_PublishTrip(t *testing.T) {
 
 		var got api.CreateTripResponse
 		require.NoError(t, json.Unmarshal(getRespBody, &got))
-		require.Equal(t, created.ID, got.ID)
-		require.Equal(t, created.DriverID, got.DriverID)
-		require.Equal(t, "published", string(got.Status))
+
+		require.False(t, got.UpdatedAt.IsZero())
+		require.False(t, got.UpdatedAt.Before(created.UpdatedAt))
+
+		expected := created
+		expected.Status = domain.TripStatusPublished
+		expected.UpdatedAt = got.UpdatedAt
+		require.Equal(t, expected, got)
 	})
 
 	t.Run("forbidden - client не является водителем поездки", func(t *testing.T) {
@@ -161,11 +169,16 @@ func TestServer_PublishTrip(t *testing.T) {
 func createDraftTrip(t *testing.T) api.CreateTripResponse {
 	t.Helper()
 
+	departureTime := time.Now().
+		UTC().
+		Add(24 * time.Hour).
+		Truncate(time.Microsecond)
+
 	payload := api.CreateTripRequest{
 		DriverID:       uuid.NewString(),
 		FromPoint:      "Moscow",
 		ToPoint:        "Saint Petersburg",
-		DepartureTime:  time.Now().Add(24 * time.Hour),
+		DepartureTime:  departureTime,
 		AvailableSeats: 3,
 	}
 
@@ -187,8 +200,22 @@ func createDraftTrip(t *testing.T) api.CreateTripResponse {
 
 	var created api.CreateTripResponse
 	require.NoError(t, json.Unmarshal(respBody, &created))
+
 	require.NotEmpty(t, created.ID)
-	require.Equal(t, "draft", string(created.Status))
+	require.False(t, created.CreatedAt.IsZero())
+	require.False(t, created.UpdatedAt.IsZero())
+	require.WithinDuration(t, payload.DepartureTime, created.DepartureTime, time.Microsecond)
+	require.Equal(t, api.CreateTripResponse{
+		ID:             created.ID,
+		DriverID:       payload.DriverID,
+		FromPoint:      payload.FromPoint,
+		ToPoint:        payload.ToPoint,
+		DepartureTime:  created.DepartureTime,
+		AvailableSeats: payload.AvailableSeats,
+		Status:         domain.TripStatusDraft,
+		CreatedAt:      created.CreatedAt,
+		UpdatedAt:      created.UpdatedAt,
+	}, created)
 
 	return created
 }
@@ -212,13 +239,17 @@ func sendPublishTrip(t *testing.T, payload api.PublishTripRequest) *http.Respons
 func requireErrorResponse(t *testing.T, resp *http.Response, code, message string) {
 	t.Helper()
 
-	var got struct {
+	type errorResponse struct {
 		Code    string `json:"code"`
 		Message string `json:"message"`
 	}
+
+	var got errorResponse
 	require.NoError(t, json.NewDecoder(resp.Body).Decode(&got))
-	require.Equal(t, code, got.Code)
-	require.Equal(t, message, got.Message)
+	require.Equal(t, errorResponse{
+		Code:    code,
+		Message: message,
+	}, got)
 }
 
 func closeResponseBody(t *testing.T, body io.Closer) {

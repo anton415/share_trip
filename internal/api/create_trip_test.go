@@ -3,22 +3,30 @@ package api_test
 import (
 	"bytes"
 	"encoding/json"
-	"github.com/google/uuid"
-	"github.com/stretchr/testify/require"
 	"io"
-	"job4j.ru/share-trip/internal/api"
 	"net/http"
 	"testing"
 	"time"
+
+	"github.com/google/uuid"
+	"github.com/stretchr/testify/require"
+
+	"job4j.ru/share-trip/internal/api"
+	"job4j.ru/share-trip/internal/domain"
 )
 
 func TestServer_CreateTrip(t *testing.T) {
 	t.Run("success - создание поездки", func(t *testing.T) {
+		departureTime := time.Now().
+			UTC().
+			Add(24 * time.Hour).
+			Truncate(time.Microsecond)
+
 		payload := api.CreateTripRequest{
 			DriverID:       uuid.NewString(),
 			FromPoint:      "Moscow",
 			ToPoint:        "Saint Petersburg",
-			DepartureTime:  time.Now().Add(24 * time.Hour),
+			DepartureTime:  departureTime,
 			AvailableSeats: 3,
 		}
 
@@ -51,12 +59,19 @@ func TestServer_CreateTrip(t *testing.T) {
 		require.NoError(t, err)
 
 		require.NotEmpty(t, got.ID)
-		require.Equal(t, payload.DriverID, got.DriverID)
-		require.Equal(t, payload.FromPoint, got.FromPoint)
-		require.Equal(t, payload.ToPoint, got.ToPoint)
-		require.Equal(t, payload.AvailableSeats, got.AvailableSeats)
-		require.Equal(t, "draft", string(got.Status))
 		require.False(t, got.CreatedAt.IsZero())
 		require.False(t, got.UpdatedAt.IsZero())
+		require.WithinDuration(t, payload.DepartureTime, got.DepartureTime, time.Microsecond)
+		require.Equal(t, api.CreateTripResponse{
+			ID:             got.ID,
+			DriverID:       payload.DriverID,
+			FromPoint:      payload.FromPoint,
+			ToPoint:        payload.ToPoint,
+			DepartureTime:  got.DepartureTime,
+			AvailableSeats: payload.AvailableSeats,
+			Status:         domain.TripStatusDraft,
+			CreatedAt:      got.CreatedAt,
+			UpdatedAt:      got.UpdatedAt,
+		}, got)
 	})
 }
