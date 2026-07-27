@@ -87,6 +87,18 @@ make down
 | `POST` | `/trip/publish` | Publishes a draft trip. |
 | `GET` | `/trip/:id` | Returns a trip by its identifier. |
 
+### Publish trip responses
+
+`POST /trip/publish` returns:
+
+| Condition | Status | Response |
+| --- | --- | --- |
+| The trip is in `draft` and `clientId` matches its driver | `200 OK` | JSON containing `tripId` |
+| The trip is already `published` | `204 No Content` | Empty body |
+| `clientId` does not match the trip driver | `403 Forbidden` | `FORBIDDEN` error |
+| The trip does not exist | `404 Not Found` | `NOT_FOUND` error |
+| The trip is neither `draft` nor `published` | `409 Conflict` | `CONFLICT` error |
+
 ## Checks
 
 ```bash
