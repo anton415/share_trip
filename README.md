@@ -87,17 +87,14 @@ make down
 | `POST` | `/trip/publish` | Publishes a draft trip. |
 | `GET` | `/trip/:id` | Returns a trip by its identifier. |
 
-### Publish trip responses
+### Трассировка требований публикации
 
-`POST /trip/publish` returns:
-
-| Condition | Status | Response |
+| Требование | Реализация | Интеграционный тест |
 | --- | --- | --- |
-| The trip is in `draft` and `clientId` matches its driver | `200 OK` | JSON containing `tripId` |
-| The trip is already `published` | `204 No Content` | Empty body |
-| `clientId` does not match the trip driver | `403 Forbidden` | `FORBIDDEN` error |
-| The trip does not exist | `404 Not Found` | `NOT_FOUND` error |
-| The trip is neither `draft` nor `published` | `409 Conflict` | `CONFLICT` error |
+| Вернуть `403`, если `clientId != trip.DriverID` | [Проверка доменного правила](internal/domain/publish_trip.go#L30-L37), [преобразование в HTTP-ответ](internal/api/trip.go#L129-L133) | [Сценарий Forbidden](internal/api/publish_trip_test.go#L95-L106) |
+| Вернуть `404`, если поездки нет | [Преобразование `pgx.ErrNoRows`](internal/repositories/trip.go#L143-L145), [преобразование в HTTP-ответ](internal/api/trip.go#L124-L128) | [Сценарий Not Found](internal/api/publish_trip_test.go#L108-L117) |
+| Вернуть `409`, если поездка не в статусе `draft` | [Проверка доменного правила](internal/domain/publish_trip.go#L47-L54), [преобразование в HTTP-ответ](internal/api/trip.go#L134-L138) | [Сценарий Conflict](internal/api/publish_trip_test.go#L119-L137) |
+| Вернуть `204`, если поездка уже в статусе `published` | [Проверка доменного правила](internal/domain/publish_trip.go#L39-L45), [преобразование в HTTP-ответ](internal/api/trip.go#L171-L173) | [Сценарий No Content](internal/api/publish_trip_test.go#L139-L166) |
 
 ## Checks
 
