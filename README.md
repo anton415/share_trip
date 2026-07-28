@@ -1,36 +1,36 @@
 # ShareTrip
 
-ShareTrip is a backend service for managing shared trips. It implements the trip lifecycle from creating a draft to publishing it, while keeping domain rules, persistence, and the HTTP API separated.
+ShareTrip — серверный сервис для управления совместными поездками. Он реализует жизненный цикл поездки от создания черновика до публикации и разделяет доменные правила, слой хранения данных и HTTP-интерфейс.
 
-## Features
+## Возможности
 
-- create a trip in the `draft` status;
-- publish a trip with authorization and state checks;
-- retrieve a trip by its identifier;
-- store trip history and outbox events transactionally;
-- verify application and PostgreSQL readiness through `GET /ready`;
-- propagate a request identifier through structured logs.
+- создание поездки в статусе `draft`;
+- публикация поездки с проверкой прав доступа и текущего статуса;
+- получение поездки по идентификатору;
+- транзакционное сохранение истории поездки и событий в таблице исходящих сообщений (`outbox`);
+- проверка готовности приложения и PostgreSQL через `GET /ready`;
+- передача идентификатора запроса в структурированные логи.
 
-## Technology stack
+## Технологический стек
 
 - Go 1.25;
 - Fiber v2;
-- PGX v5 and PostgreSQL 16;
-- Goose migrations;
-- Testcontainers and Testify;
+- PGX v5 и PostgreSQL 16;
+- миграции Goose;
+- Testcontainers и Testify;
 - Docker Compose;
-- Loki, Grafana, and Alloy for local observability.
+- Loki, Grafana и Alloy для локального мониторинга.
 
-## Requirements
+## Требования
 
-- Go 1.25 or newer;
+- Go 1.25 или новее;
 - GNU Make;
-- Docker with Docker Compose;
-- `curl` for the end-to-end readiness check.
+- Docker с Docker Compose;
+- `curl` для сквозной проверки готовности приложения.
 
-## Configuration
+## Конфигурация
 
-Default local values match the PostgreSQL service from `deploy/docker-compose.yml`. The available environment variables are documented in `configs/local.env.example`:
+Локальные значения по умолчанию соответствуют сервису PostgreSQL из `deploy/docker-compose.yml`. Доступные переменные окружения описаны в `configs/local.env.example`:
 
 ```text
 DB_HOST
@@ -43,60 +43,76 @@ DATABASE_URL
 HTTP_ADDR
 ```
 
-Export these variables before starting the application when you need values other than the defaults.
+Если нужны значения, отличные от настроек по умолчанию, экспортируйте эти переменные перед запуском приложения.
 
-## Local start
+## Локальный запуск
 
-Install project tools and download dependencies:
+Установите инструменты проекта и загрузите зависимости:
 
 ```bash
 make deps
 ```
 
-Start PostgreSQL and apply migrations:
+Запустите PostgreSQL и примените миграции:
 
 ```bash
 make up
 make migrate-up
 ```
 
-Run the service:
+Запустите сервис:
 
 ```bash
 make run
 ```
 
-The service listens on `http://localhost:8080` by default. In another terminal, verify readiness:
+По умолчанию сервис доступен по адресу `http://localhost:8080`. В другом терминале проверьте его готовность:
 
 ```bash
 make e2e
 ```
 
-Stop the local infrastructure:
+Остановите локальную инфраструктуру:
 
 ```bash
 make down
 ```
 
-## HTTP API
+## HTTP-интерфейс
 
-| Method | Path | Description |
+| Метод | Путь | Описание |
 | --- | --- | --- |
-| `GET` | `/ready` | Checks the service and PostgreSQL connection. |
-| `POST` | `/trip/create` | Creates a trip in the `draft` status. |
-| `POST` | `/trip/publish` | Publishes a draft trip. |
-| `GET` | `/trip/:id` | Returns a trip by its identifier. |
+| `GET` | `/ready` | Проверяет готовность сервиса и соединение с PostgreSQL. |
+| `POST` | `/trip/create` | Создаёт поездку в статусе `draft`. |
+| `POST` | `/trip/publish` | Публикует черновик поездки. |
+| `GET` | `/trip/:id` | Возвращает поездку по идентификатору. |
+
+## Структура пакета API
+
+В пакете `internal/api` каждый HTTP-обработчик находится в отдельном файле. DTO и логика конкретного обработчика расположены вместе, а для создания сервера, регистрации маршрутов и общих функций предусмотрены отдельные файлы:
+
+| Файл | Назначение |
+| --- | --- |
+| [`create_trip.go`](internal/api/create_trip.go#L14) | DTO запроса и ответа для создания поездки, а также обработчик создания. |
+| [`publish_trip.go`](internal/api/publish_trip.go#L13) | DTO запроса и ответа для публикации поездки, а также обработчик публикации. |
+| [`get_trip_by_id.go`](internal/api/get_trip_by_id.go#L9) | Обработчик получения поездки по идентификатору. |
+| [`ready.go`](internal/api/ready.go#L11) | Обработчик проверки готовности сервиса. |
+| [`helpers.go`](internal/api/helpers.go#L13) | Общие функции преобразования ответов и обработки HTTP-ошибок. |
+| [`server.go`](internal/api/server.go#L12) | Зависимости и создание сервера, а также регистрация маршрутов. |
+| [`helpers_test.go`](internal/api/helpers_test.go#L18) | Общая подготовка тестовых данных и функции проверок. |
+
+`helpers.go` — принятое в проекте соглашение об именовании, а не специальный механизм языка Go. Go компилирует все файлы `.go`, не относящиеся к тестам и объявляющие `package api`, как единый пакет, поэтому обработчики могут вызывать закрытые функции пакета из этого файла. В `helpers.go` следует размещать только код, который действительно используется несколькими обработчиками, например `newTripResponse` и `writeFiberServiceError`. Разбор запроса и логику конкретного сценария нужно оставлять в файле соответствующего обработчика. По аналогии `helpers_test.go` содержит функции, общие для нескольких тестов, и благодаря суффиксу `_test.go` компилируется только при запуске тестов.
 
 ### Трассировка требований публикации
 
 | Требование | Реализация | Интеграционный тест |
 | --- | --- | --- |
-| Вернуть `403`, если `clientId != trip.DriverID` | [Проверка доменного правила](internal/domain/publish_trip.go#L30-L37), [преобразование в HTTP-ответ](internal/api/trip.go#L129-L133) | [Сценарий Forbidden](internal/api/publish_trip_test.go#L95-L106) |
-| Вернуть `404`, если поездки нет | [Преобразование `pgx.ErrNoRows`](internal/repositories/trip.go#L143-L145), [преобразование в HTTP-ответ](internal/api/trip.go#L124-L128) | [Сценарий Not Found](internal/api/publish_trip_test.go#L108-L117) |
-| Вернуть `409`, если поездка не в статусе `draft` | [Проверка доменного правила](internal/domain/publish_trip.go#L47-L54), [преобразование в HTTP-ответ](internal/api/trip.go#L134-L138) | [Сценарий Conflict](internal/api/publish_trip_test.go#L119-L137) |
-| Вернуть `204`, если поездка уже в статусе `published` | [Проверка доменного правила](internal/domain/publish_trip.go#L39-L45), [преобразование в HTTP-ответ](internal/api/trip.go#L171-L173) | [Сценарий No Content](internal/api/publish_trip_test.go#L139-L166) |
+| Вернуть `403`, если `clientId != trip.DriverID` | [Проверка доменного правила](internal/domain/publish_trip.go#L30-L37), [преобразование в HTTP-ответ](internal/api/helpers.go#L44-L48) | [Сценарий запрета доступа](internal/api/publish_trip_test.go#L94-L105) |
+| Вернуть `404`, если поездки нет | [Преобразование `pgx.ErrNoRows`](internal/repositories/trip.go#L143-L145), [преобразование в HTTP-ответ](internal/api/helpers.go#L39-L43) | [Сценарий отсутствующей поездки](internal/api/publish_trip_test.go#L107-L116) |
+| Вернуть `409`, если поездка не в статусе `draft` | [Проверка доменного правила](internal/domain/publish_trip.go#L47-L54), [преобразование в HTTP-ответ](internal/api/helpers.go#L49-L53) | [Сценарий конфликта статусов](internal/api/publish_trip_test.go#L118-L136) |
+| Вернуть `204`, если поездка уже в статусе `published` | [Проверка доменного правила](internal/domain/publish_trip.go#L39-L45), [преобразование в HTTP-ответ](internal/api/publish_trip.go#L45-L47) | [Сценарий ответа без содержимого](internal/api/publish_trip_test.go#L138-L165) |
 
-## Checks
+## Проверки
 
 ```bash
 make fmt
@@ -107,4 +123,4 @@ make build
 make check
 ```
 
-Integration tests start an isolated PostgreSQL 16 container, so Docker must be running.
+Интеграционные тесты запускают изолированный контейнер PostgreSQL 16, поэтому Docker должен быть запущен.
