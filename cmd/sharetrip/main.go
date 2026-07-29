@@ -2,14 +2,17 @@ package main
 
 import (
 	"context"
-	"github.com/gofiber/fiber/v2"
-	application "job4j.ru/share-trip/internal/app"
 	"log"
+
+	"github.com/gofiber/fiber/v2"
+	"github.com/prometheus/client_golang/prometheus"
 
 	"job4j.ru/share-trip/internal/api"
 	"job4j.ru/share-trip/internal/api/middleware"
+	application "job4j.ru/share-trip/internal/app"
 	"job4j.ru/share-trip/internal/config"
 	"job4j.ru/share-trip/internal/db"
+	observability "job4j.ru/share-trip/internal/observability/metrics"
 	"job4j.ru/share-trip/internal/repositories"
 	"job4j.ru/share-trip/internal/service"
 )
@@ -35,11 +38,14 @@ func main() {
 
 	logger.Info("connected to PostgreSQL")
 
-	tripRepository := repositories.NewPostgresTripRepository(pool)
-	tripService := service.NewTripService(tripRepository, pool)
-	server := api.NewServer(tripService, pool)
+	registry := prometheus.NewRegistry()
+	appMetrics := observability.New(registry)
+	tripRepository := repositories.NewPostgresTripRepository(pool, appMetrics)
+	tripService := service.NewTripService(tripRepository, pool, appMetrics)
+	server := api.NewServer(tripService, pool, registry)
 	app := fiber.New()
 	app.Use(middleware.Correlation(logger))
+	app.Use(api.NewHTTPMetricsMiddleware(appMetrics))
 	server.Route(app)
 
 	addr := config.Env("HTTP_ADDR", ":8080")

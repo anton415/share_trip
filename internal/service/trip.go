@@ -11,9 +11,10 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"job4j.ru/share-trip/internal/domain"
 
+	"job4j.ru/share-trip/internal/domain"
 	"job4j.ru/share-trip/internal/observability/logctx"
+	observability "job4j.ru/share-trip/internal/observability/metrics"
 )
 
 type TripRepository interface {
@@ -36,17 +37,31 @@ type TripService struct {
 	repo        TripRepository
 	pool        *pgxpool.Pool
 	tripUsecase *domain.TripUsecase
+	metrics     *observability.Metrics
 }
 
-func NewTripService(repo TripRepository, pool *pgxpool.Pool) *TripService {
+func NewTripService(
+	repo TripRepository,
+	pool *pgxpool.Pool,
+	metrics *observability.Metrics,
+) *TripService {
 	return &TripService{
 		repo:        repo,
 		pool:        pool,
 		tripUsecase: domain.NewTripUsecase(repo),
+		metrics:     metrics,
 	}
 }
 
 func (s *TripService) CreateTrip(ctx context.Context, command CreateTripCommand) (domain.Trip, error) {
+	started := time.Now()
+	result := observability.ResultSuccess
+	defer func() {
+		s.metrics.TripCreateTotal.WithLabelValues(result).Inc()
+		s.metrics.TripCreateDuration.WithLabelValues(result).
+			Observe(time.Since(started).Seconds())
+	}()
+
 	logger := logctx.Logger(ctx).With(
 		slog.String("service", "TripService"),
 		slog.String("operation", "CreateTrip"),
@@ -55,6 +70,7 @@ func (s *TripService) CreateTrip(ctx context.Context, command CreateTripCommand)
 	logger.Info("create trip started")
 
 	if err := validateCreateTripCommand(command); err != nil {
+		result = observability.ResultValidationError
 		logger.Warn(
 			"create trip failed",
 			slog.Any("error", err),
@@ -81,6 +97,7 @@ func (s *TripService) CreateTrip(ctx context.Context, command CreateTripCommand)
 		return usecaseResp, nil
 	})
 	if err != nil {
+		result = observability.ResultInternalError
 		logger.Error(
 			"create trip failed",
 			slog.Any("error", err),
@@ -130,6 +147,14 @@ type PublishTripCommand struct {
 }
 
 func (s *TripService) PublishTrip(ctx context.Context, command PublishTripCommand) (string, error) {
+	started := time.Now()
+	result := observability.ResultSuccess
+	defer func() {
+		s.metrics.TripPublishTotal.WithLabelValues(result).Inc()
+		s.metrics.TripPublishDuration.WithLabelValues(result).
+			Observe(time.Since(started).Seconds())
+	}()
+
 	resp, err := tx(ctx, s.pool, func(tx pgx.Tx) (*domain.PublishTripResponse, error) {
 		return s.tripUsecase.PublishTrip(ctx, tx, domain.PublishTripRequest{
 			TripID:   command.TripID.String(),
@@ -137,8 +162,24 @@ func (s *TripService) PublishTrip(ctx context.Context, command PublishTripComman
 		})
 	})
 	if err != nil {
+		result = publishTripResult(err)
 		return "", fmt.Errorf("publish trip transaction: %w", err)
 	}
 
 	return resp.TripID, nil
+}
+
+func publishTripResult(err error) string {
+	switch {
+	case errors.Is(err, domain.ErrTripNotFound):
+		return observability.ResultNotFound
+	case errors.Is(err, domain.ErrForbidden):
+		return observability.ResultForbidden
+	case errors.Is(err, domain.ErrConflict):
+		return observability.ResultConflict
+	case errors.Is(err, domain.ErrTripAlreadyPublished):
+		return observability.ResultAlreadyPublished
+	default:
+		return observability.ResultInternalError
+	}
 }

@@ -4,23 +4,30 @@ import (
 	"context"
 	"errors"
 	"fmt"
-
-	"job4j.ru/share-trip/internal/domain"
+	"log/slog"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"log/slog"
-
+	"job4j.ru/share-trip/internal/domain"
 	"job4j.ru/share-trip/internal/observability/logctx"
+	observability "job4j.ru/share-trip/internal/observability/metrics"
 )
 
 type PostgresTripRepository struct {
-	pool *pgxpool.Pool
+	pool    *pgxpool.Pool
+	metrics *observability.Metrics
 }
 
-func NewPostgresTripRepository(pool *pgxpool.Pool) *PostgresTripRepository {
-	return &PostgresTripRepository{pool: pool}
+func NewPostgresTripRepository(
+	pool *pgxpool.Pool,
+	metrics *observability.Metrics,
+) *PostgresTripRepository {
+	return &PostgresTripRepository{
+		pool:    pool,
+		metrics: metrics,
+	}
 }
 
 func (r *PostgresTripRepository) Create(
@@ -28,6 +35,16 @@ func (r *PostgresTripRepository) Create(
 	tx pgx.Tx,
 	trip domain.Trip,
 ) (domain.Trip, error) {
+	started := time.Now()
+	result := observability.ResultSuccess
+	defer func() {
+		r.observeQuery(
+			observability.RepositoryOperationTripCreate,
+			result,
+			started,
+		)
+	}()
+
 	logger := logctx.Logger(ctx).With(
 		slog.String("layer", "repository"),
 		slog.String("repository", "TripRepository"),
@@ -78,6 +95,7 @@ func (r *PostgresTripRepository) Create(
 		&created.UpdatedAt,
 	)
 	if err != nil {
+		result = observability.ResultInternalError
 		logger.Error(
 			"insert trip failed",
 			slog.Any("error", err),
@@ -96,6 +114,7 @@ func (r *PostgresTripRepository) Create(
 		VALUES ($1, NULL, $2)
 	`, created.ID, created.Status)
 	if err != nil {
+		result = observability.ResultInternalError
 		logger.Error(
 			"insert trip history failed",
 			slog.Any("error", err),
@@ -112,6 +131,16 @@ func (r *PostgresTripRepository) GetForUpdateByID(
 	tx pgx.Tx,
 	id string,
 ) (domain.Trip, error) {
+	started := time.Now()
+	result := observability.ResultSuccess
+	defer func() {
+		r.observeQuery(
+			observability.RepositoryOperationTripGetForUpdateByID,
+			result,
+			started,
+		)
+	}()
+
 	var trip domain.Trip
 	var status string
 
@@ -141,9 +170,11 @@ func (r *PostgresTripRepository) GetForUpdateByID(
 		&trip.UpdatedAt,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
+		result = observability.ResultNotFound
 		return domain.Trip{}, domain.ErrTripNotFound
 	}
 	if err != nil {
+		result = observability.ResultInternalError
 		return domain.Trip{}, fmt.Errorf("get trip by id for update: %w", err)
 	}
 
@@ -157,6 +188,16 @@ func (r *PostgresTripRepository) Update(
 	tx pgx.Tx,
 	trip domain.Trip,
 ) (domain.Trip, error) {
+	started := time.Now()
+	result := observability.ResultSuccess
+	defer func() {
+		r.observeQuery(
+			observability.RepositoryOperationTripUpdate,
+			result,
+			started,
+		)
+	}()
+
 	var updated domain.Trip
 	var status string
 
@@ -225,9 +266,11 @@ func (r *PostgresTripRepository) Update(
 		&updated.UpdatedAt,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
+		result = observability.ResultNotFound
 		return domain.Trip{}, domain.ErrTripNotFound
 	}
 	if err != nil {
+		result = observability.ResultInternalError
 		return domain.Trip{}, fmt.Errorf("update trip: %w", err)
 	}
 
@@ -241,6 +284,16 @@ func (r *PostgresTripRepository) CreateOutboxEvent(
 	tx pgx.Tx,
 	event domain.OutboxEvent,
 ) error {
+	started := time.Now()
+	result := observability.ResultSuccess
+	defer func() {
+		r.observeQuery(
+			observability.RepositoryOperationOutboxEventCreate,
+			result,
+			started,
+		)
+	}()
+
 	_, err := tx.Exec(ctx, `
 		INSERT INTO outbox_event (
 			event_name,
@@ -254,6 +307,7 @@ func (r *PostgresTripRepository) CreateOutboxEvent(
 		event.Payload,
 	)
 	if err != nil {
+		result = observability.ResultInternalError
 		return fmt.Errorf("insert outbox event: %w", err)
 	}
 
@@ -261,6 +315,16 @@ func (r *PostgresTripRepository) CreateOutboxEvent(
 }
 
 func (r *PostgresTripRepository) GetTripByID(ctx context.Context, id string) (domain.Trip, error) {
+	started := time.Now()
+	result := observability.ResultSuccess
+	defer func() {
+		r.observeQuery(
+			observability.RepositoryOperationTripGetByID,
+			result,
+			started,
+		)
+	}()
+
 	var trip domain.Trip
 	var status string
 
@@ -289,13 +353,29 @@ func (r *PostgresTripRepository) GetTripByID(ctx context.Context, id string) (do
 		&trip.UpdatedAt,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
+		result = observability.ResultNotFound
 		return domain.Trip{}, domain.ErrTripNotFound
 	}
 	if err != nil {
+		result = observability.ResultInternalError
 		return domain.Trip{}, fmt.Errorf("get trip by id: %w", err)
 	}
 
 	trip.Status = domain.TripStatus(status)
 
 	return trip, nil
+}
+
+func (r *PostgresTripRepository) observeQuery(
+	operation string,
+	result string,
+	started time.Time,
+) {
+	r.metrics.RepositoryQueryTotal.
+		WithLabelValues(operation, result).
+		Inc()
+
+	r.metrics.RepositoryQueryDuration.
+		WithLabelValues(operation, result).
+		Observe(time.Since(started).Seconds())
 }
