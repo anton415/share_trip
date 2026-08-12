@@ -119,28 +119,29 @@ make down
 
 ## Структура пакета API
 
-В пакете `internal/api` каждый HTTP-обработчик находится в отдельном файле. DTO и логика конкретного обработчика расположены вместе, а для создания сервера, регистрации маршрутов и общих функций предусмотрены отдельные файлы:
+В пакете `internal/api` каждый HTTP-сценарий находится в отдельном файле. Его DTO, преобразование доменной модели в HTTP-ответ и обработчик расположены вместе. Создание сервера, регистрация маршрутов и общий формат ошибок вынесены отдельно:
 
 | Файл | Назначение |
 | --- | --- |
-| [`create_trip.go`](internal/api/create_trip.go#L14) | DTO запроса и ответа для создания поездки, а также обработчик создания. |
-| [`publish_trip.go`](internal/api/publish_trip.go#L13) | DTO запроса и ответа для публикации поездки, а также обработчик публикации. |
-| [`get_trip_by_id.go`](internal/api/get_trip_by_id.go#L9) | Обработчик получения поездки по идентификатору. |
+| [`create_trip.go`](internal/api/create_trip.go) | DTO, преобразование ответа и обработчик создания поездки. |
+| [`move_trip_draft_to_published.go`](internal/api/move_trip_draft_to_published.go) | DTO и обработчик перевода поездки из `draft` в `published`. |
+| [`get_trip_by_id.go`](internal/api/get_trip_by_id.go) | DTO, преобразование ответа и обработчик получения поездки по идентификатору. |
 | [`ready.go`](internal/api/ready.go#L11) | Обработчик проверки готовности сервиса. |
-| [`helpers.go`](internal/api/helpers.go#L13) | Общие функции преобразования ответов и обработки HTTP-ошибок. |
+| [`metrics.go`](internal/api/metrics.go) | Адаптер обработчика метрик Prometheus для Fiber. |
+| [`error_response.go`](internal/api/error_response.go) | Общий DTO ошибки и преобразование ошибок сервиса в HTTP-ответы. |
 | [`server.go`](internal/api/server.go#L12) | Зависимости и создание сервера, а также регистрация маршрутов. |
 | [`helpers_test.go`](internal/api/helpers_test.go#L18) | Общая подготовка тестовых данных и функции проверок. |
 
-`helpers.go` — принятое в проекте соглашение об именовании, а не специальный механизм языка Go. Go компилирует все файлы `.go`, не относящиеся к тестам и объявляющие `package api`, как единый пакет, поэтому обработчики могут вызывать закрытые функции пакета из этого файла. В `helpers.go` следует размещать только код, который действительно используется несколькими обработчиками, например `newTripResponse` и `writeFiberServiceError`. Разбор запроса и логику конкретного сценария нужно оставлять в файле соответствующего обработчика. По аналогии `helpers_test.go` содержит функции, общие для нескольких тестов, и благодаря суффиксу `_test.go` компилируется только при запуске тестов.
+Go компилирует все файлы `.go`, не относящиеся к тестам и объявляющие `package api`, как единый пакет. Поэтому обработчики могут вызывать закрытую функцию `writeFiberServiceError` из `error_response.go`. В общий файл вынесен только действительно общий HTTP-контракт ошибки. Успешные DTO и их преобразователи остаются в файлах соответствующих ручек, чтобы контракты создания и получения поездки могли изменяться независимо. По аналогии `helpers_test.go` содержит функции, общие для нескольких тестов, и благодаря суффиксу `_test.go` компилируется только при запуске тестов.
 
 ### Трассировка требований публикации
 
 | Требование | Реализация | Интеграционный тест |
 | --- | --- | --- |
-| Вернуть `403`, если `clientId != trip.DriverID` | [Проверка доменного правила](internal/domain/publish_trip.go#L30-L37), [преобразование в HTTP-ответ](internal/api/helpers.go#L44-L48) | [Сценарий запрета доступа](internal/api/publish_trip_test.go#L94-L105) |
-| Вернуть `404`, если поездки нет | [Преобразование `pgx.ErrNoRows`](internal/repositories/trip.go#L143-L145), [преобразование в HTTP-ответ](internal/api/helpers.go#L39-L43) | [Сценарий отсутствующей поездки](internal/api/publish_trip_test.go#L107-L116) |
-| Вернуть `409`, если поездка не в статусе `draft` | [Проверка доменного правила](internal/domain/publish_trip.go#L47-L54), [преобразование в HTTP-ответ](internal/api/helpers.go#L49-L53) | [Сценарий конфликта статусов](internal/api/publish_trip_test.go#L118-L136) |
-| Вернуть `204`, если поездка уже в статусе `published` | [Проверка доменного правила](internal/domain/publish_trip.go#L39-L45), [преобразование в HTTP-ответ](internal/api/publish_trip.go#L45-L47) | [Сценарий ответа без содержимого](internal/api/publish_trip_test.go#L138-L165) |
+| Вернуть `403`, если `clientId != trip.DriverID` | [Проверка доменного правила](internal/domain/publish_trip.go#L30-L37), [преобразование в HTTP-ответ](internal/api/error_response.go) | [Сценарий запрета доступа](internal/api/move_trip_draft_to_published_test.go#L94-L105) |
+| Вернуть `404`, если поездки нет | [Преобразование `pgx.ErrNoRows`](internal/repositories/trip.go#L143-L145), [преобразование в HTTP-ответ](internal/api/error_response.go) | [Сценарий отсутствующей поездки](internal/api/move_trip_draft_to_published_test.go#L107-L116) |
+| Вернуть `409`, если поездка не в статусе `draft` | [Проверка доменного правила](internal/domain/publish_trip.go#L47-L54), [преобразование в HTTP-ответ](internal/api/error_response.go) | [Сценарий конфликта статусов](internal/api/move_trip_draft_to_published_test.go#L118-L136) |
+| Вернуть `204`, если поездка уже в статусе `published` | [Проверка доменного правила](internal/domain/publish_trip.go#L39-L45), [преобразование в HTTP-ответ](internal/api/move_trip_draft_to_published.go) | [Сценарий ответа без содержимого](internal/api/move_trip_draft_to_published_test.go#L138-L165) |
 
 ## Проверки
 

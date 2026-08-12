@@ -2,9 +2,38 @@ package api
 
 import (
 	"strings"
+	"time"
 
 	"github.com/gofiber/fiber/v2"
+
+	"job4j.ru/share-trip/internal/domain"
 )
+
+type GetTripByIDResponse struct {
+	ID             string            `json:"id"`
+	DriverID       string            `json:"driverId"`
+	FromPoint      string            `json:"fromPoint"`
+	ToPoint        string            `json:"toPoint"`
+	DepartureTime  time.Time         `json:"departureTime"`
+	AvailableSeats int               `json:"availableSeats"`
+	Status         domain.TripStatus `json:"status"`
+	CreatedAt      time.Time         `json:"createdAt"`
+	UpdatedAt      time.Time         `json:"updatedAt"`
+}
+
+func newGetTripByIDResponse(trip domain.Trip) GetTripByIDResponse {
+	return GetTripByIDResponse{
+		ID:             trip.ID,
+		DriverID:       trip.DriverID,
+		FromPoint:      trip.FromPoint,
+		ToPoint:        trip.ToPoint,
+		DepartureTime:  trip.DepartureTime,
+		AvailableSeats: trip.Seats,
+		Status:         trip.Status,
+		CreatedAt:      trip.CreatedAt,
+		UpdatedAt:      trip.UpdatedAt,
+	}
+}
 
 func (s *Server) getTripByID(c *fiber.Ctx) error {
 	tripID := c.Params("id")
@@ -20,5 +49,5 @@ func (s *Server) getTripByID(c *fiber.Ctx) error {
 		return writeFiberServiceError(c, err)
 	}
 
-	return c.Status(fiber.StatusOK).JSON(newTripResponse(trip))
+	return c.Status(fiber.StatusOK).JSON(newGetTripByIDResponse(trip))
 }

@@ -26,7 +26,7 @@ func TestServer_ProcessMetrics(t *testing.T) {
 		testMetrics.TripPublishTotal.WithLabelValues(observability.ResultSuccess),
 	)
 
-	resp := sendPublishTrip(t, api.PublishTripRequest{
+	resp := sendMoveTripDraftToPublished(t, api.MoveTripDraftToPublishedRequest{
 		TripID:   created.ID,
 		ClientID: created.DriverID,
 	})

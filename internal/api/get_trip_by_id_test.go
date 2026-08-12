@@ -24,9 +24,9 @@ func TestServer_GetTripByID(t *testing.T) {
 
 		require.Equal(t, http.StatusOK, resp.StatusCode)
 
-		var got api.CreateTripResponse
+		var got api.GetTripByIDResponse
 		require.NoError(t, json.NewDecoder(resp.Body).Decode(&got))
-		require.Equal(t, created, got)
+		require.Equal(t, api.GetTripByIDResponse(created), got)
 	})
 
 	t.Run("not found - поездка не существует", func(t *testing.T) {

@@ -15,20 +15,6 @@ type errorResponse struct {
 	Message string `json:"message"`
 }
 
-func newTripResponse(trip domain.Trip) CreateTripResponse {
-	return CreateTripResponse{
-		ID:             trip.ID,
-		DriverID:       trip.DriverID,
-		FromPoint:      trip.FromPoint,
-		ToPoint:        trip.ToPoint,
-		DepartureTime:  trip.DepartureTime,
-		AvailableSeats: trip.Seats,
-		Status:         trip.Status,
-		CreatedAt:      trip.CreatedAt,
-		UpdatedAt:      trip.UpdatedAt,
-	}
-}
-
 func writeFiberServiceError(c *fiber.Ctx, err error) error {
 	switch {
 	case errors.Is(err, service.ErrValidation):

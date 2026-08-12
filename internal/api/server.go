@@ -3,10 +3,8 @@ package api
 import (
 	"context"
 
-	"github.com/gofiber/adaptor/v2"
 	"github.com/gofiber/fiber/v2"
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promhttp"
 
 	"job4j.ru/share-trip/internal/domain"
 	"job4j.ru/share-trip/internal/service"
@@ -42,15 +40,10 @@ func NewServer(
 
 func (s *Server) Route(router fiber.Router) {
 	router.Get("/ready", s.ready)
-	router.Get(
-		"/metrics",
-		adaptor.HTTPHandler(
-			promhttp.HandlerFor(s.registry, promhttp.HandlerOpts{}),
-		),
-	)
+	router.Get("/metrics", s.metricsHandler())
 
 	trips := router.Group("/trip")
 	trips.Post("/create", s.createTrip)
-	trips.Post("/publish", s.publishTrip)
+	trips.Post("/publish", s.moveTripDraftToPublished)
 	trips.Get("/:id", s.getTripByID)
 }

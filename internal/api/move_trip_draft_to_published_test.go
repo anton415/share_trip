@@ -14,22 +14,22 @@ import (
 	"job4j.ru/share-trip/internal/domain"
 )
 
-func TestServer_PublishTrip(t *testing.T) {
+func TestServer_MoveTripDraftToPublished(t *testing.T) {
 	t.Run("validation error - идентификаторы должны быть UUID", func(t *testing.T) {
 		tests := []struct {
 			name    string
-			payload api.PublishTripRequest
+			payload api.MoveTripDraftToPublishedRequest
 		}{
 			{
 				name: "invalid trip id",
-				payload: api.PublishTripRequest{
+				payload: api.MoveTripDraftToPublishedRequest{
 					TripID:   "not-a-uuid",
 					ClientID: uuid.NewString(),
 				},
 			},
 			{
 				name: "invalid client id",
-				payload: api.PublishTripRequest{
+				payload: api.MoveTripDraftToPublishedRequest{
 					TripID:   uuid.NewString(),
 					ClientID: "",
 				},
@@ -38,7 +38,7 @@ func TestServer_PublishTrip(t *testing.T) {
 
 		for _, tt := range tests {
 			t.Run(tt.name, func(t *testing.T) {
-				resp := sendPublishTrip(t, tt.payload)
+				resp := sendMoveTripDraftToPublished(t, tt.payload)
 				defer closeResponseBody(t, resp.Body)
 
 				require.Equal(t, http.StatusBadRequest, resp.StatusCode)
@@ -50,7 +50,7 @@ func TestServer_PublishTrip(t *testing.T) {
 	t.Run("success - перевод поездки из draft в published", func(t *testing.T) {
 		created := createDraftTrip(t)
 
-		publishResp := sendPublishTrip(t, api.PublishTripRequest{
+		publishResp := sendMoveTripDraftToPublished(t, api.MoveTripDraftToPublishedRequest{
 			TripID:   created.ID,
 			ClientID: created.DriverID,
 		})
@@ -61,9 +61,9 @@ func TestServer_PublishTrip(t *testing.T) {
 		publishRespBody, err := io.ReadAll(publishResp.Body)
 		require.NoError(t, err)
 
-		var published api.PublishTripResponse
+		var published api.MoveTripDraftToPublishedResponse
 		require.NoError(t, json.Unmarshal(publishRespBody, &published))
-		require.Equal(t, api.PublishTripResponse{
+		require.Equal(t, api.MoveTripDraftToPublishedResponse{
 			TripID: created.ID,
 		}, published)
 
@@ -79,13 +79,13 @@ func TestServer_PublishTrip(t *testing.T) {
 		getRespBody, err := io.ReadAll(getResp.Body)
 		require.NoError(t, err)
 
-		var got api.CreateTripResponse
+		var got api.GetTripByIDResponse
 		require.NoError(t, json.Unmarshal(getRespBody, &got))
 
 		require.False(t, got.UpdatedAt.IsZero())
 		require.False(t, got.UpdatedAt.Before(created.UpdatedAt))
 
-		expected := created
+		expected := api.GetTripByIDResponse(created)
 		expected.Status = domain.TripStatusPublished
 		expected.UpdatedAt = got.UpdatedAt
 		require.Equal(t, expected, got)
@@ -94,7 +94,7 @@ func TestServer_PublishTrip(t *testing.T) {
 	t.Run("forbidden - client не является водителем поездки", func(t *testing.T) {
 		created := createDraftTrip(t)
 
-		resp := sendPublishTrip(t, api.PublishTripRequest{
+		resp := sendMoveTripDraftToPublished(t, api.MoveTripDraftToPublishedRequest{
 			TripID:   created.ID,
 			ClientID: uuid.NewString(),
 		})
@@ -105,7 +105,7 @@ func TestServer_PublishTrip(t *testing.T) {
 	})
 
 	t.Run("not found - поездка не существует", func(t *testing.T) {
-		resp := sendPublishTrip(t, api.PublishTripRequest{
+		resp := sendMoveTripDraftToPublished(t, api.MoveTripDraftToPublishedRequest{
 			TripID:   uuid.NewString(),
 			ClientID: uuid.NewString(),
 		})
@@ -125,7 +125,7 @@ func TestServer_PublishTrip(t *testing.T) {
 		)
 		require.NoError(t, err)
 
-		resp := sendPublishTrip(t, api.PublishTripRequest{
+		resp := sendMoveTripDraftToPublished(t, api.MoveTripDraftToPublishedRequest{
 			TripID:   created.ID,
 			ClientID: created.DriverID,
 		})
@@ -137,16 +137,16 @@ func TestServer_PublishTrip(t *testing.T) {
 
 	t.Run("no content - поездка уже published", func(t *testing.T) {
 		created := createDraftTrip(t)
-		payload := api.PublishTripRequest{
+		payload := api.MoveTripDraftToPublishedRequest{
 			TripID:   created.ID,
 			ClientID: created.DriverID,
 		}
 
-		firstResp := sendPublishTrip(t, payload)
+		firstResp := sendMoveTripDraftToPublished(t, payload)
 		require.Equal(t, http.StatusOK, firstResp.StatusCode)
 		require.NoError(t, firstResp.Body.Close())
 
-		secondResp := sendPublishTrip(t, payload)
+		secondResp := sendMoveTripDraftToPublished(t, payload)
 		defer closeResponseBody(t, secondResp.Body)
 
 		require.Equal(t, http.StatusNoContent, secondResp.StatusCode)
@@ -165,7 +165,10 @@ func TestServer_PublishTrip(t *testing.T) {
 	})
 }
 
-func sendPublishTrip(t *testing.T, payload api.PublishTripRequest) *http.Response {
+func sendMoveTripDraftToPublished(
+	t *testing.T,
+	payload api.MoveTripDraftToPublishedRequest,
+) *http.Response {
 	t.Helper()
 
 	body, err := json.Marshal(payload)

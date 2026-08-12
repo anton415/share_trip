@@ -10,17 +10,17 @@ import (
 	"job4j.ru/share-trip/internal/service"
 )
 
-type PublishTripRequest struct {
+type MoveTripDraftToPublishedRequest struct {
 	TripID   string `json:"tripId"`
 	ClientID string `json:"clientId"`
 }
 
-type PublishTripResponse struct {
+type MoveTripDraftToPublishedResponse struct {
 	TripID string `json:"tripId"`
 }
 
-func (s *Server) publishTrip(c *fiber.Ctx) error {
-	var request PublishTripRequest
+func (s *Server) moveTripDraftToPublished(c *fiber.Ctx) error {
+	var request MoveTripDraftToPublishedRequest
 
 	if err := c.BodyParser(&request); err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(errorResponse{
@@ -49,7 +49,7 @@ func (s *Server) publishTrip(c *fiber.Ctx) error {
 		return writeFiberServiceError(c, err)
 	}
 
-	return c.Status(fiber.StatusOK).JSON(PublishTripResponse{
+	return c.Status(fiber.StatusOK).JSON(MoveTripDraftToPublishedResponse{
 		TripID: publishedTripID,
 	})
 }

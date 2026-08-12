@@ -50,7 +50,7 @@ func TestServer_RepositoryMetrics(t *testing.T) {
 		)
 	}
 
-	publishResp := sendPublishTrip(t, api.PublishTripRequest{
+	publishResp := sendMoveTripDraftToPublished(t, api.MoveTripDraftToPublishedRequest{
 		TripID:   created.ID,
 		ClientID: created.DriverID,
 	})
@@ -107,7 +107,7 @@ func TestServer_RepositoryMetrics(t *testing.T) {
 		observability.ResultNotFound,
 	)
 
-	notFoundPublishResp := sendPublishTrip(t, api.PublishTripRequest{
+	notFoundPublishResp := sendMoveTripDraftToPublished(t, api.MoveTripDraftToPublishedRequest{
 		TripID:   uuid.NewString(),
 		ClientID: uuid.NewString(),
 	})
