@@ -21,20 +21,6 @@ type GetTripByIDResponse struct {
 	UpdatedAt      time.Time         `json:"updatedAt"`
 }
 
-func newGetTripByIDResponse(trip domain.Trip) GetTripByIDResponse {
-	return GetTripByIDResponse{
-		ID:             trip.ID,
-		DriverID:       trip.DriverID,
-		FromPoint:      trip.FromPoint,
-		ToPoint:        trip.ToPoint,
-		DepartureTime:  trip.DepartureTime,
-		AvailableSeats: trip.Seats,
-		Status:         trip.Status,
-		CreatedAt:      trip.CreatedAt,
-		UpdatedAt:      trip.UpdatedAt,
-	}
-}
-
 func (s *Server) getTripByID(c *fiber.Ctx) error {
 	tripID := c.Params("id")
 	if strings.TrimSpace(tripID) == "" {
