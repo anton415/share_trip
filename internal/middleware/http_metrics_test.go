@@ -1,4 +1,4 @@
-package api_test
+package middleware_test
 
 import (
 	"net/http"
@@ -10,7 +10,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/require"
 
-	"job4j.ru/share-trip/internal/api"
+	"job4j.ru/share-trip/internal/middleware"
 	observability "job4j.ru/share-trip/internal/observability/metrics"
 )
 
@@ -18,7 +18,7 @@ func TestHTTPMetricsMiddleware(t *testing.T) {
 	t.Run("uses route template", func(t *testing.T) {
 		appMetrics := observability.New(prometheus.NewRegistry())
 		app := fiber.New()
-		app.Use(api.NewHTTPMetricsMiddleware(appMetrics))
+		app.Use(middleware.NewHTTPMetricsMiddleware(appMetrics))
 		app.Get("/trip/:id", func(c *fiber.Ctx) error {
 			return c.SendStatus(fiber.StatusCreated)
 		})
@@ -42,7 +42,7 @@ func TestHTTPMetricsMiddleware(t *testing.T) {
 	t.Run("records Fiber error status", func(t *testing.T) {
 		appMetrics := observability.New(prometheus.NewRegistry())
 		app := fiber.New()
-		app.Use(api.NewHTTPMetricsMiddleware(appMetrics))
+		app.Use(middleware.NewHTTPMetricsMiddleware(appMetrics))
 		app.Get("/error", func(*fiber.Ctx) error {
 			return fiber.ErrTeapot
 		})
@@ -66,7 +66,7 @@ func TestHTTPMetricsMiddleware(t *testing.T) {
 	t.Run("uses bounded label for unmatched route", func(t *testing.T) {
 		appMetrics := observability.New(prometheus.NewRegistry())
 		app := fiber.New()
-		app.Use(api.NewHTTPMetricsMiddleware(appMetrics))
+		app.Use(middleware.NewHTTPMetricsMiddleware(appMetrics))
 
 		req, err := http.NewRequest(
 			http.MethodGet,
@@ -91,7 +91,7 @@ func TestHTTPMetricsMiddleware(t *testing.T) {
 	t.Run("copies method label before Fiber reuses context", func(t *testing.T) {
 		appMetrics := observability.New(prometheus.NewRegistry())
 		app := fiber.New()
-		app.Use(api.NewHTTPMetricsMiddleware(appMetrics))
+		app.Use(middleware.NewHTTPMetricsMiddleware(appMetrics))
 		app.Post("/trip/create", func(c *fiber.Ctx) error {
 			return c.SendStatus(fiber.StatusCreated)
 		})

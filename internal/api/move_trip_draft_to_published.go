@@ -2,6 +2,7 @@ package api
 
 import (
 	"errors"
+	"strings"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
@@ -29,12 +30,33 @@ func (s *Server) moveTripDraftToPublished(c *fiber.Ctx) error {
 		})
 	}
 
-	tripID, tripIDErr := uuid.Parse(request.TripID)
-	clientID, clientIDErr := uuid.Parse(request.ClientID)
-	if tripIDErr != nil || clientIDErr != nil {
+	if strings.TrimSpace(request.TripID) == "" {
 		return c.Status(fiber.StatusBadRequest).JSON(errorResponse{
 			Code:    "VALIDATION_ERROR",
-			Message: "invalid request body",
+			Message: "tripId is required",
+		})
+	}
+
+	tripID, err := uuid.Parse(request.TripID)
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(errorResponse{
+			Code:    "VALIDATION_ERROR",
+			Message: "tripId must be a valid UUID",
+		})
+	}
+
+	if strings.TrimSpace(request.ClientID) == "" {
+		return c.Status(fiber.StatusBadRequest).JSON(errorResponse{
+			Code:    "VALIDATION_ERROR",
+			Message: "clientId is required",
+		})
+	}
+
+	clientID, err := uuid.Parse(request.ClientID)
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(errorResponse{
+			Code:    "VALIDATION_ERROR",
+			Message: "clientId must be a valid UUID",
 		})
 	}
 
@@ -42,10 +64,11 @@ func (s *Server) moveTripDraftToPublished(c *fiber.Ctx) error {
 		TripID:   tripID,
 		ClientID: clientID,
 	})
-	if errors.Is(err, domain.ErrTripAlreadyPublished) {
-		return c.SendStatus(fiber.StatusNoContent)
-	}
 	if err != nil {
+		if errors.Is(err, domain.ErrTripAlreadyPublished) {
+			return c.SendStatus(fiber.StatusNoContent)
+		}
+
 		return writeFiberServiceError(c, err)
 	}
 

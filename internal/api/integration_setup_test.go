@@ -16,8 +16,9 @@ import (
 	"github.com/testcontainers/testcontainers-go/modules/postgres"
 
 	"job4j.ru/share-trip/internal/api"
+	"job4j.ru/share-trip/internal/middleware"
 	observability "job4j.ru/share-trip/internal/observability/metrics"
-	"job4j.ru/share-trip/internal/repositories"
+	"job4j.ru/share-trip/internal/repo"
 	"job4j.ru/share-trip/internal/service"
 )
 
@@ -77,14 +78,14 @@ func TestMain(m *testing.M) {
 	registry := prometheus.NewRegistry()
 	testMetrics = observability.New(registry)
 
-	tripRepository := repositories.NewPostgresTripRepository(testPool, testMetrics)
+	tripRepository := repo.NewPostgresTripRepository(testPool, testMetrics)
 	tripService := service.NewTripService(tripRepository, testPool, testMetrics)
 
 	server := api.NewServer(tripService, testPool, registry)
 
 	testApp = fiber.New()
-	testApp.Use(api.NewHTTPMetricsMiddleware(testMetrics))
-	server.Route(testApp)
+	testApp.Use(middleware.NewHTTPMetricsMiddleware(testMetrics))
+	server.RegisterRoutes(testApp)
 
 	code := m.Run()
 

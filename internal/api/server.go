@@ -3,7 +3,6 @@ package api
 import (
 	"context"
 
-	"github.com/gofiber/fiber/v2"
 	"github.com/prometheus/client_golang/prometheus"
 
 	"job4j.ru/share-trip/internal/domain"
@@ -24,26 +23,4 @@ type Server struct {
 	trips    TripService
 	db       Pinger
 	registry prometheus.Gatherer
-}
-
-func NewServer(
-	trips TripService,
-	db Pinger,
-	registry prometheus.Gatherer,
-) *Server {
-	return &Server{
-		trips:    trips,
-		db:       db,
-		registry: registry,
-	}
-}
-
-func (s *Server) Route(router fiber.Router) {
-	router.Get("/ready", s.ready)
-	router.Get("/metrics", s.metricsHandler())
-
-	trips := router.Group("/trip")
-	trips.Post("/create", s.createTrip)
-	trips.Post("/publish", s.moveTripDraftToPublished)
-	trips.Get("/:id", s.getTripByID)
 }

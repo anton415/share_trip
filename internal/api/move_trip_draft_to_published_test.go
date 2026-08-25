@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"strings"
 	"testing"
 
 	"github.com/google/uuid"
@@ -15,24 +16,27 @@ import (
 )
 
 func TestServer_MoveTripDraftToPublished(t *testing.T) {
-	t.Run("validation error - идентификаторы должны быть UUID", func(t *testing.T) {
+	t.Run("validation error - обязательные идентификаторы отсутствуют", func(t *testing.T) {
 		tests := []struct {
-			name    string
-			payload api.MoveTripDraftToPublishedRequest
+			name            string
+			payload         api.MoveTripDraftToPublishedRequest
+			expectedMessage string
 		}{
 			{
-				name: "invalid trip id",
+				name: "trip id is empty",
 				payload: api.MoveTripDraftToPublishedRequest{
-					TripID:   "not-a-uuid",
+					TripID:   "",
 					ClientID: uuid.NewString(),
 				},
+				expectedMessage: "tripId is required",
 			},
 			{
-				name: "invalid client id",
+				name: "client id contains only spaces",
 				payload: api.MoveTripDraftToPublishedRequest{
 					TripID:   uuid.NewString(),
-					ClientID: "",
+					ClientID: "   ",
 				},
+				expectedMessage: "clientId is required",
 			},
 		}
 
@@ -42,9 +46,71 @@ func TestServer_MoveTripDraftToPublished(t *testing.T) {
 				defer closeResponseBody(t, resp.Body)
 
 				require.Equal(t, http.StatusBadRequest, resp.StatusCode)
-				requireErrorResponse(t, resp, "VALIDATION_ERROR", "invalid request body")
+				requireErrorResponse(
+					t,
+					resp,
+					"VALIDATION_ERROR",
+					tt.expectedMessage,
+				)
 			})
 		}
+	})
+
+	t.Run("validation error - идентификаторы должны быть UUID", func(t *testing.T) {
+		tests := []struct {
+			name            string
+			payload         api.MoveTripDraftToPublishedRequest
+			expectedMessage string
+		}{
+			{
+				name: "invalid trip id",
+				payload: api.MoveTripDraftToPublishedRequest{
+					TripID:   "not-a-uuid",
+					ClientID: uuid.NewString(),
+				},
+				expectedMessage: "tripId must be a valid UUID",
+			},
+			{
+				name: "invalid client id",
+				payload: api.MoveTripDraftToPublishedRequest{
+					TripID:   uuid.NewString(),
+					ClientID: "not-a-uuid",
+				},
+				expectedMessage: "clientId must be a valid UUID",
+			},
+		}
+
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				resp := sendMoveTripDraftToPublished(t, tt.payload)
+				defer closeResponseBody(t, resp.Body)
+
+				require.Equal(t, http.StatusBadRequest, resp.StatusCode)
+				requireErrorResponse(
+					t,
+					resp,
+					"VALIDATION_ERROR",
+					tt.expectedMessage,
+				)
+			})
+		}
+	})
+
+	t.Run("validation error - тело запроса должно быть валидным JSON", func(t *testing.T) {
+		req, err := http.NewRequest(
+			http.MethodPost,
+			"/trip/publish",
+			strings.NewReader("{"),
+		)
+		require.NoError(t, err)
+		req.Header.Set("Content-Type", "application/json")
+
+		resp, err := testApp.Test(req, -1)
+		require.NoError(t, err)
+		defer closeResponseBody(t, resp.Body)
+
+		require.Equal(t, http.StatusBadRequest, resp.StatusCode)
+		requireErrorResponse(t, resp, "VALIDATION_ERROR", "invalid request body")
 	})
 
 	t.Run("success - перевод поездки из draft в published", func(t *testing.T) {

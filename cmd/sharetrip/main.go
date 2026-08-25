@@ -8,17 +8,17 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 
 	"job4j.ru/share-trip/internal/api"
-	"job4j.ru/share-trip/internal/api/middleware"
-	application "job4j.ru/share-trip/internal/app"
 	"job4j.ru/share-trip/internal/config"
 	"job4j.ru/share-trip/internal/db"
-	observability "job4j.ru/share-trip/internal/observability/metrics"
-	"job4j.ru/share-trip/internal/repositories"
+	"job4j.ru/share-trip/internal/middleware"
+	"job4j.ru/share-trip/internal/observability"
+	metrics "job4j.ru/share-trip/internal/observability/metrics"
+	"job4j.ru/share-trip/internal/repo"
 	"job4j.ru/share-trip/internal/service"
 )
 
 func main() {
-	logger, logFile, err := application.NewLogger()
+	logger, logFile, err := observability.NewLogger()
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -39,14 +39,14 @@ func main() {
 	logger.Info("connected to PostgreSQL")
 
 	registry := prometheus.NewRegistry()
-	appMetrics := observability.New(registry)
-	tripRepository := repositories.NewPostgresTripRepository(pool, appMetrics)
+	appMetrics := metrics.New(registry)
+	tripRepository := repo.NewPostgresTripRepository(pool, appMetrics)
 	tripService := service.NewTripService(tripRepository, pool, appMetrics)
 	server := api.NewServer(tripService, pool, registry)
 	app := fiber.New()
 	app.Use(middleware.Correlation(logger))
-	app.Use(api.NewHTTPMetricsMiddleware(appMetrics))
-	server.Route(app)
+	app.Use(middleware.NewHTTPMetricsMiddleware(appMetrics))
+	server.RegisterRoutes(app)
 
 	addr := config.Env("HTTP_ADDR", ":8080")
 
