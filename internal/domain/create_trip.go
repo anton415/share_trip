@@ -6,13 +6,14 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
 	"job4j.ru/share-trip/internal/observability/logctx"
 )
 
 type CreateTripRequest struct {
-	DriverID      string
+	DriverID      uuid.UUID
 	FromPoint     string
 	ToPoint       string
 	DepartureTime time.Time
@@ -25,7 +26,7 @@ type CreateTripResponse struct {
 
 type TripRepository interface {
 	Create(ctx context.Context, tx pgx.Tx, trip Trip) (Trip, error)
-	GetForUpdateByID(ctx context.Context, tx pgx.Tx, id string) (Trip, error)
+	GetForUpdateByID(ctx context.Context, tx pgx.Tx, id uuid.UUID) (Trip, error)
 	Update(ctx context.Context, tx pgx.Tx, trip Trip) (Trip, error)
 	CreateOutboxEvent(ctx context.Context, tx pgx.Tx, event OutboxEvent) error
 }
@@ -68,7 +69,7 @@ func (u *TripUsecase) CreateTrip(
 
 	logger.Info(
 		"create trip usecase completed",
-		slog.String("trip_id", trip.ID),
+		slog.String("trip_id", trip.ID.String()),
 	)
 
 	return &CreateTripResponse{

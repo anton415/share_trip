@@ -17,7 +17,7 @@ type MoveTripDraftToPublishedRequest struct {
 }
 
 type MoveTripDraftToPublishedResponse struct {
-	TripID string `json:"tripId"`
+	TripID uuid.UUID `json:"tripId"`
 }
 
 func (s *Server) moveTripDraftToPublished(c *fiber.Ctx) error {

@@ -51,8 +51,8 @@ func TestServer_RepositoryMetrics(t *testing.T) {
 	}
 
 	publishResp := sendMoveTripDraftToPublished(t, api.MoveTripDraftToPublishedRequest{
-		TripID:   created.ID,
-		ClientID: created.DriverID,
+		TripID:   created.ID.String(),
+		ClientID: created.DriverID.String(),
 	})
 	require.Equal(t, http.StatusOK, publishResp.StatusCode)
 	closeResponseBody(t, publishResp.Body)
@@ -69,7 +69,7 @@ func TestServer_RepositoryMetrics(t *testing.T) {
 		observability.ResultSuccess,
 	)
 
-	getReq, err := http.NewRequest(http.MethodGet, "/trip/"+created.ID, nil)
+	getReq, err := http.NewRequest(http.MethodGet, "/trip/"+created.ID.String(), nil)
 	require.NoError(t, err)
 	getResp, err := testApp.Test(getReq, -1)
 	require.NoError(t, err)

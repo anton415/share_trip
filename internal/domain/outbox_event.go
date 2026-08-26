@@ -1,9 +1,13 @@
 package domain
 
-import "encoding/json"
+import (
+	"encoding/json"
+
+	"github.com/google/uuid"
+)
 
 type OutboxEvent struct {
 	EventName   string          `json:"event_name"`
-	AggregateID string          `json:"aggregate_id"`
+	AggregateID uuid.UUID       `json:"aggregate_id"`
 	Payload     json.RawMessage `json:"payload"`
 }

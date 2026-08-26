@@ -5,13 +5,14 @@ import (
 	"time"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/google/uuid"
 
 	"job4j.ru/share-trip/internal/domain"
 )
 
 type GetTripByIDResponse struct {
-	ID             string            `json:"id"`
-	DriverID       string            `json:"driverId"`
+	ID             uuid.UUID         `json:"id"`
+	DriverID       uuid.UUID         `json:"driverId"`
 	FromPoint      string            `json:"fromPoint"`
 	ToPoint        string            `json:"toPoint"`
 	DepartureTime  time.Time         `json:"departureTime"`
@@ -30,7 +31,15 @@ func (s *Server) getTripByID(c *fiber.Ctx) error {
 		})
 	}
 
-	trip, err := s.trips.GetTripByID(c.UserContext(), tripID)
+	parsedTripID, err := uuid.Parse(tripID)
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(errorResponse{
+			Code:    "VALIDATION_ERROR",
+			Message: "tripId must be a valid UUID",
+		})
+	}
+
+	trip, err := s.trips.GetTripByID(c.UserContext(), parsedTripID)
 	if err != nil {
 		return writeFiberServiceError(c, err)
 	}

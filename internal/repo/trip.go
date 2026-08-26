@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
@@ -67,8 +68,8 @@ func (r *PostgresTripRepository) Create(
 		)
 		VALUES ($1, $2, $3, $4, $5, $6)
 		RETURNING
-			id::text,
-			driver_id::text,
+			id,
+			driver_id,
 			from_point,
 			to_point,
 			departure_time,
@@ -106,7 +107,7 @@ func (r *PostgresTripRepository) Create(
 	created.Status = domain.TripStatus(status)
 
 	logger = logger.With(
-		slog.String("trip_id", created.ID),
+		slog.String("trip_id", created.ID.String()),
 	)
 
 	_, err = tx.Exec(ctx, `
@@ -129,7 +130,7 @@ func (r *PostgresTripRepository) Create(
 func (r *PostgresTripRepository) GetForUpdateByID(
 	ctx context.Context,
 	tx pgx.Tx,
-	id string,
+	id uuid.UUID,
 ) (domain.Trip, error) {
 	started := time.Now()
 	result := observability.ResultSuccess
@@ -146,8 +147,8 @@ func (r *PostgresTripRepository) GetForUpdateByID(
 
 	err := tx.QueryRow(ctx, `
 		SELECT
-			id::text,
-			driver_id::text,
+			id,
+			driver_id,
 			from_point,
 			to_point,
 			departure_time,
@@ -219,8 +220,8 @@ func (r *PostgresTripRepository) Update(
 				updated_at = NOW()
 			WHERE id = $1
 			RETURNING
-				id::text,
-				driver_id::text,
+				id,
+				driver_id,
 				from_point,
 				to_point,
 				departure_time,
@@ -231,7 +232,7 @@ func (r *PostgresTripRepository) Update(
 		),
 		history AS (
 			INSERT INTO trip_history (trip_id, from_status, to_status)
-			SELECT updated_trip.id::uuid, old_trip.status, updated_trip.status::trip_status
+			SELECT updated_trip.id, old_trip.status, updated_trip.status::trip_status
 			FROM updated_trip, old_trip
 			WHERE old_trip.status <> updated_trip.status::trip_status
 		)
@@ -314,7 +315,7 @@ func (r *PostgresTripRepository) CreateOutboxEvent(
 	return nil
 }
 
-func (r *PostgresTripRepository) GetTripByID(ctx context.Context, id string) (domain.Trip, error) {
+func (r *PostgresTripRepository) GetTripByID(ctx context.Context, id uuid.UUID) (domain.Trip, error) {
 	started := time.Now()
 	result := observability.ResultSuccess
 	defer func() {
@@ -330,8 +331,8 @@ func (r *PostgresTripRepository) GetTripByID(ctx context.Context, id string) (do
 
 	err := r.pool.QueryRow(ctx, `
 		SELECT
-			id::text,
-			driver_id::text,
+			id,
+			driver_id,
 			from_point,
 			to_point,
 			departure_time,

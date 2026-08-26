@@ -5,16 +5,17 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 )
 
 type PublishTripRequest struct {
-	TripID   string
-	ClientID string
+	TripID   uuid.UUID
+	ClientID uuid.UUID
 }
 
 type PublishTripResponse struct {
-	TripID string
+	TripID uuid.UUID
 }
 
 func (u *TripUsecase) PublishTrip(
@@ -61,7 +62,7 @@ func (u *TripUsecase) PublishTrip(
 	}
 
 	payload, err := json.Marshal(struct {
-		TripID string `json:"trip_id"`
+		TripID uuid.UUID `json:"trip_id"`
 	}{
 		TripID: updatedTrip.ID,
 	})

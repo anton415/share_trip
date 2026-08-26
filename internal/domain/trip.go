@@ -1,6 +1,10 @@
 package domain
 
-import "time"
+import (
+	"time"
+
+	"github.com/google/uuid"
+)
 
 type TripStatus string
 
@@ -10,8 +14,8 @@ const (
 )
 
 type Trip struct {
-	ID            string
-	DriverID      string
+	ID            uuid.UUID
+	DriverID      uuid.UUID
 	FromPoint     string
 	ToPoint       string
 	DepartureTime time.Time

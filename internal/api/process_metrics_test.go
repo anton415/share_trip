@@ -27,8 +27,8 @@ func TestServer_ProcessMetrics(t *testing.T) {
 	)
 
 	resp := sendMoveTripDraftToPublished(t, api.MoveTripDraftToPublishedRequest{
-		TripID:   created.ID,
-		ClientID: created.DriverID,
+		TripID:   created.ID.String(),
+		ClientID: created.DriverID.String(),
 	})
 	defer closeResponseBody(t, resp.Body)
 

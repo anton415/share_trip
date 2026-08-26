@@ -2,9 +2,11 @@ package api
 
 import (
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/google/uuid"
 
 	"job4j.ru/share-trip/internal/domain"
 	"job4j.ru/share-trip/internal/observability/logctx"
@@ -20,8 +22,8 @@ type CreateTripRequest struct {
 }
 
 type CreateTripResponse struct {
-	ID             string            `json:"id"`
-	DriverID       string            `json:"driverId"`
+	ID             uuid.UUID         `json:"id"`
+	DriverID       uuid.UUID         `json:"driverId"`
 	FromPoint      string            `json:"fromPoint"`
 	ToPoint        string            `json:"toPoint"`
 	DepartureTime  time.Time         `json:"departureTime"`
@@ -52,6 +54,27 @@ func (s *Server) createTrip(c *fiber.Ctx) error {
 		})
 	}
 
+	if strings.TrimSpace(request.DriverID) == "" {
+		return c.Status(fiber.StatusBadRequest).JSON(errorResponse{
+			Code:    "VALIDATION_ERROR",
+			Message: "driverId is required",
+		})
+	}
+
+	driverID, err := uuid.Parse(request.DriverID)
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(errorResponse{
+			Code:    "VALIDATION_ERROR",
+			Message: "driverId must be a valid UUID",
+		})
+	}
+	if driverID == uuid.Nil {
+		return c.Status(fiber.StatusBadRequest).JSON(errorResponse{
+			Code:    "VALIDATION_ERROR",
+			Message: "driverId is required",
+		})
+	}
+
 	logger = logger.With(
 		slog.String("client_id", request.DriverID),
 	)
@@ -61,7 +84,7 @@ func (s *Server) createTrip(c *fiber.Ctx) error {
 	logger.Info("create trip request accepted")
 
 	trip, err := s.trips.CreateTrip(ctx, service.CreateTripCommand{
-		DriverID:      request.DriverID,
+		DriverID:      driverID,
 		FromPoint:     request.FromPoint,
 		ToPoint:       request.ToPoint,
 		DepartureTime: request.DepartureTime,
@@ -77,7 +100,7 @@ func (s *Server) createTrip(c *fiber.Ctx) error {
 
 	logger.Info(
 		"create trip completed",
-		slog.String("trip_id", trip.ID),
+		slog.String("trip_id", trip.ID.String()),
 	)
 
 	return c.Status(fiber.StatusCreated).JSON(newCreateTripResponse(trip))

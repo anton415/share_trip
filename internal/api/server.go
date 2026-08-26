@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 
+	"github.com/google/uuid"
 	"github.com/prometheus/client_golang/prometheus"
 
 	"job4j.ru/share-trip/internal/domain"
@@ -15,8 +16,8 @@ type Pinger interface {
 
 type TripService interface {
 	CreateTrip(ctx context.Context, command service.CreateTripCommand) (domain.Trip, error)
-	GetTripByID(ctx context.Context, id string) (domain.Trip, error)
-	PublishTrip(ctx context.Context, command service.PublishTripCommand) (string, error)
+	GetTripByID(ctx context.Context, id uuid.UUID) (domain.Trip, error)
+	PublishTrip(ctx context.Context, command service.PublishTripCommand) (uuid.UUID, error)
 }
 
 type Server struct {

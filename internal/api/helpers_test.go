@@ -56,7 +56,7 @@ func createDraftTrip(t *testing.T) api.CreateTripResponse {
 	require.WithinDuration(t, payload.DepartureTime, created.DepartureTime, time.Microsecond)
 	require.Equal(t, api.CreateTripResponse{
 		ID:             created.ID,
-		DriverID:       payload.DriverID,
+		DriverID:       uuid.MustParse(payload.DriverID),
 		FromPoint:      payload.FromPoint,
 		ToPoint:        payload.ToPoint,
 		DepartureTime:  created.DepartureTime,

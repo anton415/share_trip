@@ -12,10 +12,22 @@ import (
 )
 
 func TestServer_GetTripByID(t *testing.T) {
+	t.Run("validation error - идентификатор должен быть UUID", func(t *testing.T) {
+		req, err := http.NewRequest(http.MethodGet, "/trip/not-a-uuid", nil)
+		require.NoError(t, err)
+
+		resp, err := testApp.Test(req, -1)
+		require.NoError(t, err)
+		defer closeResponseBody(t, resp.Body)
+
+		require.Equal(t, http.StatusBadRequest, resp.StatusCode)
+		requireErrorResponse(t, resp, "VALIDATION_ERROR", "tripId must be a valid UUID")
+	})
+
 	t.Run("success - получение поездки по идентификатору", func(t *testing.T) {
 		created := createDraftTrip(t)
 
-		req, err := http.NewRequest(http.MethodGet, "/trip/"+created.ID, nil)
+		req, err := http.NewRequest(http.MethodGet, "/trip/"+created.ID.String(), nil)
 		require.NoError(t, err)
 
 		resp, err := testApp.Test(req, -1)

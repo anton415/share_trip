@@ -117,8 +117,8 @@ func TestServer_MoveTripDraftToPublished(t *testing.T) {
 		created := createDraftTrip(t)
 
 		publishResp := sendMoveTripDraftToPublished(t, api.MoveTripDraftToPublishedRequest{
-			TripID:   created.ID,
-			ClientID: created.DriverID,
+			TripID:   created.ID.String(),
+			ClientID: created.DriverID.String(),
 		})
 		defer closeResponseBody(t, publishResp.Body)
 
@@ -133,7 +133,7 @@ func TestServer_MoveTripDraftToPublished(t *testing.T) {
 			TripID: created.ID,
 		}, published)
 
-		getReq, err := http.NewRequest(http.MethodGet, "/trip/"+created.ID, nil)
+		getReq, err := http.NewRequest(http.MethodGet, "/trip/"+created.ID.String(), nil)
 		require.NoError(t, err)
 
 		getResp, err := testApp.Test(getReq, -1)
@@ -161,7 +161,7 @@ func TestServer_MoveTripDraftToPublished(t *testing.T) {
 		created := createDraftTrip(t)
 
 		resp := sendMoveTripDraftToPublished(t, api.MoveTripDraftToPublishedRequest{
-			TripID:   created.ID,
+			TripID:   created.ID.String(),
 			ClientID: uuid.NewString(),
 		})
 		defer closeResponseBody(t, resp.Body)
@@ -192,8 +192,8 @@ func TestServer_MoveTripDraftToPublished(t *testing.T) {
 		require.NoError(t, err)
 
 		resp := sendMoveTripDraftToPublished(t, api.MoveTripDraftToPublishedRequest{
-			TripID:   created.ID,
-			ClientID: created.DriverID,
+			TripID:   created.ID.String(),
+			ClientID: created.DriverID.String(),
 		})
 		defer closeResponseBody(t, resp.Body)
 
@@ -204,8 +204,8 @@ func TestServer_MoveTripDraftToPublished(t *testing.T) {
 	t.Run("no content - поездка уже published", func(t *testing.T) {
 		created := createDraftTrip(t)
 		payload := api.MoveTripDraftToPublishedRequest{
-			TripID:   created.ID,
-			ClientID: created.DriverID,
+			TripID:   created.ID.String(),
+			ClientID: created.DriverID.String(),
 		}
 
 		firstResp := sendMoveTripDraftToPublished(t, payload)
