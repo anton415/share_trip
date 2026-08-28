@@ -15,7 +15,11 @@ import (
 )
 
 func TestHTTPMetricsMiddleware(t *testing.T) {
+	t.Parallel()
+
 	t.Run("uses route template", func(t *testing.T) {
+		t.Parallel()
+
 		appMetrics := observability.New(prometheus.NewRegistry())
 		app := fiber.New()
 		app.Use(middleware.NewHTTPMetricsMiddleware(appMetrics))
@@ -40,6 +44,8 @@ func TestHTTPMetricsMiddleware(t *testing.T) {
 	})
 
 	t.Run("records Fiber error status", func(t *testing.T) {
+		t.Parallel()
+
 		appMetrics := observability.New(prometheus.NewRegistry())
 		app := fiber.New()
 		app.Use(middleware.NewHTTPMetricsMiddleware(appMetrics))
@@ -64,6 +70,8 @@ func TestHTTPMetricsMiddleware(t *testing.T) {
 	})
 
 	t.Run("uses bounded label for unmatched route", func(t *testing.T) {
+		t.Parallel()
+
 		appMetrics := observability.New(prometheus.NewRegistry())
 		app := fiber.New()
 		app.Use(middleware.NewHTTPMetricsMiddleware(appMetrics))
@@ -89,6 +97,8 @@ func TestHTTPMetricsMiddleware(t *testing.T) {
 	})
 
 	t.Run("copies method label before Fiber reuses context", func(t *testing.T) {
+		t.Parallel()
+
 		appMetrics := observability.New(prometheus.NewRegistry())
 		app := fiber.New()
 		app.Use(middleware.NewHTTPMetricsMiddleware(appMetrics))

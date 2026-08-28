@@ -8,10 +8,14 @@ import (
 )
 
 func TestServer_Ready(t *testing.T) {
+	requireIntegration(t)
+	t.Parallel()
+
+	fixture := newTestFixture()
 	req, err := http.NewRequest(http.MethodGet, "/ready", nil)
 	require.NoError(t, err)
 
-	resp, err := testApp.Test(req, -1)
+	resp, err := fixture.app.Test(req, -1)
 	require.NoError(t, err)
 	defer closeResponseBody(t, resp.Body)
 

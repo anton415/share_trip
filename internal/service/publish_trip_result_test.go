@@ -12,6 +12,8 @@ import (
 )
 
 func TestPublishTripResult(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name string
 		err  error
@@ -51,6 +53,8 @@ func TestPublishTripResult(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
 			require.Equal(t, tt.want, publishTripResult(tt.err))
 		})
 	}

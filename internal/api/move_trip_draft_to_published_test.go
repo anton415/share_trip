@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
@@ -16,7 +17,12 @@ import (
 )
 
 func TestServer_MoveTripDraftToPublished(t *testing.T) {
+	requireIntegration(t)
+	t.Parallel()
+
 	t.Run("validation error - обязательные идентификаторы отсутствуют", func(t *testing.T) {
+		t.Parallel()
+
 		tests := []struct {
 			name            string
 			payload         api.MoveTripDraftToPublishedRequest
@@ -42,7 +48,10 @@ func TestServer_MoveTripDraftToPublished(t *testing.T) {
 
 		for _, tt := range tests {
 			t.Run(tt.name, func(t *testing.T) {
-				resp := sendMoveTripDraftToPublished(t, tt.payload)
+				t.Parallel()
+
+				fixture := newTestFixture()
+				resp := sendMoveTripDraftToPublished(t, fixture.app, tt.payload)
 				defer closeResponseBody(t, resp.Body)
 
 				require.Equal(t, http.StatusBadRequest, resp.StatusCode)
@@ -57,6 +66,8 @@ func TestServer_MoveTripDraftToPublished(t *testing.T) {
 	})
 
 	t.Run("validation error - идентификаторы должны быть UUID", func(t *testing.T) {
+		t.Parallel()
+
 		tests := []struct {
 			name            string
 			payload         api.MoveTripDraftToPublishedRequest
@@ -82,7 +93,10 @@ func TestServer_MoveTripDraftToPublished(t *testing.T) {
 
 		for _, tt := range tests {
 			t.Run(tt.name, func(t *testing.T) {
-				resp := sendMoveTripDraftToPublished(t, tt.payload)
+				t.Parallel()
+
+				fixture := newTestFixture()
+				resp := sendMoveTripDraftToPublished(t, fixture.app, tt.payload)
 				defer closeResponseBody(t, resp.Body)
 
 				require.Equal(t, http.StatusBadRequest, resp.StatusCode)
@@ -97,6 +111,9 @@ func TestServer_MoveTripDraftToPublished(t *testing.T) {
 	})
 
 	t.Run("validation error - тело запроса должно быть валидным JSON", func(t *testing.T) {
+		t.Parallel()
+
+		fixture := newTestFixture()
 		req, err := http.NewRequest(
 			http.MethodPost,
 			"/trip/publish",
@@ -105,7 +122,7 @@ func TestServer_MoveTripDraftToPublished(t *testing.T) {
 		require.NoError(t, err)
 		req.Header.Set("Content-Type", "application/json")
 
-		resp, err := testApp.Test(req, -1)
+		resp, err := fixture.app.Test(req, -1)
 		require.NoError(t, err)
 		defer closeResponseBody(t, resp.Body)
 
@@ -114,9 +131,12 @@ func TestServer_MoveTripDraftToPublished(t *testing.T) {
 	})
 
 	t.Run("success - перевод поездки из draft в published", func(t *testing.T) {
-		created := createDraftTrip(t)
+		t.Parallel()
 
-		publishResp := sendMoveTripDraftToPublished(t, api.MoveTripDraftToPublishedRequest{
+		fixture := newTestFixture()
+		created := createDraftTrip(t, fixture.app)
+
+		publishResp := sendMoveTripDraftToPublished(t, fixture.app, api.MoveTripDraftToPublishedRequest{
 			TripID:   created.ID.String(),
 			ClientID: created.DriverID.String(),
 		})
@@ -136,7 +156,7 @@ func TestServer_MoveTripDraftToPublished(t *testing.T) {
 		getReq, err := http.NewRequest(http.MethodGet, "/trip/"+created.ID.String(), nil)
 		require.NoError(t, err)
 
-		getResp, err := testApp.Test(getReq, -1)
+		getResp, err := fixture.app.Test(getReq, -1)
 		require.NoError(t, err)
 		defer closeResponseBody(t, getResp.Body)
 
@@ -158,9 +178,12 @@ func TestServer_MoveTripDraftToPublished(t *testing.T) {
 	})
 
 	t.Run("forbidden - client не является водителем поездки", func(t *testing.T) {
-		created := createDraftTrip(t)
+		t.Parallel()
 
-		resp := sendMoveTripDraftToPublished(t, api.MoveTripDraftToPublishedRequest{
+		fixture := newTestFixture()
+		created := createDraftTrip(t, fixture.app)
+
+		resp := sendMoveTripDraftToPublished(t, fixture.app, api.MoveTripDraftToPublishedRequest{
 			TripID:   created.ID.String(),
 			ClientID: uuid.NewString(),
 		})
@@ -171,7 +194,10 @@ func TestServer_MoveTripDraftToPublished(t *testing.T) {
 	})
 
 	t.Run("not found - поездка не существует", func(t *testing.T) {
-		resp := sendMoveTripDraftToPublished(t, api.MoveTripDraftToPublishedRequest{
+		t.Parallel()
+
+		fixture := newTestFixture()
+		resp := sendMoveTripDraftToPublished(t, fixture.app, api.MoveTripDraftToPublishedRequest{
 			TripID:   uuid.NewString(),
 			ClientID: uuid.NewString(),
 		})
@@ -182,7 +208,10 @@ func TestServer_MoveTripDraftToPublished(t *testing.T) {
 	})
 
 	t.Run("conflict - поездка не в статусе draft", func(t *testing.T) {
-		created := createDraftTrip(t)
+		t.Parallel()
+
+		fixture := newTestFixture()
+		created := createDraftTrip(t, fixture.app)
 
 		_, err := testPool.Exec(
 			testCtx,
@@ -191,7 +220,7 @@ func TestServer_MoveTripDraftToPublished(t *testing.T) {
 		)
 		require.NoError(t, err)
 
-		resp := sendMoveTripDraftToPublished(t, api.MoveTripDraftToPublishedRequest{
+		resp := sendMoveTripDraftToPublished(t, fixture.app, api.MoveTripDraftToPublishedRequest{
 			TripID:   created.ID.String(),
 			ClientID: created.DriverID.String(),
 		})
@@ -202,17 +231,20 @@ func TestServer_MoveTripDraftToPublished(t *testing.T) {
 	})
 
 	t.Run("no content - поездка уже published", func(t *testing.T) {
-		created := createDraftTrip(t)
+		t.Parallel()
+
+		fixture := newTestFixture()
+		created := createDraftTrip(t, fixture.app)
 		payload := api.MoveTripDraftToPublishedRequest{
 			TripID:   created.ID.String(),
 			ClientID: created.DriverID.String(),
 		}
 
-		firstResp := sendMoveTripDraftToPublished(t, payload)
+		firstResp := sendMoveTripDraftToPublished(t, fixture.app, payload)
 		require.Equal(t, http.StatusOK, firstResp.StatusCode)
 		require.NoError(t, firstResp.Body.Close())
 
-		secondResp := sendMoveTripDraftToPublished(t, payload)
+		secondResp := sendMoveTripDraftToPublished(t, fixture.app, payload)
 		defer closeResponseBody(t, secondResp.Body)
 
 		require.Equal(t, http.StatusNoContent, secondResp.StatusCode)
@@ -233,6 +265,7 @@ func TestServer_MoveTripDraftToPublished(t *testing.T) {
 
 func sendMoveTripDraftToPublished(
 	t *testing.T,
+	app *fiber.App,
 	payload api.MoveTripDraftToPublishedRequest,
 ) *http.Response {
 	t.Helper()
@@ -244,7 +277,7 @@ func sendMoveTripDraftToPublished(
 	require.NoError(t, err)
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := testApp.Test(req, -1)
+	resp, err := app.Test(req, -1)
 	require.NoError(t, err)
 
 	return resp

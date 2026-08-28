@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
@@ -15,7 +16,7 @@ import (
 	"job4j.ru/share-trip/internal/domain"
 )
 
-func createDraftTrip(t *testing.T) api.CreateTripResponse {
+func createDraftTrip(t *testing.T, app *fiber.App) api.CreateTripResponse {
 	t.Helper()
 
 	departureTime := time.Now().
@@ -38,7 +39,7 @@ func createDraftTrip(t *testing.T) api.CreateTripResponse {
 	require.NoError(t, err)
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := testApp.Test(req, -1)
+	resp, err := app.Test(req, -1)
 	require.NoError(t, err)
 	defer closeResponseBody(t, resp.Body)
 

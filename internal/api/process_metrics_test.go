@@ -12,21 +12,25 @@ import (
 )
 
 func TestServer_ProcessMetrics(t *testing.T) {
+	requireIntegration(t)
+	t.Parallel()
+
+	fixture := newTestFixture()
 	createBefore := testutil.ToFloat64(
-		testMetrics.TripCreateTotal.WithLabelValues(observability.ResultSuccess),
+		fixture.metrics.TripCreateTotal.WithLabelValues(observability.ResultSuccess),
 	)
 
-	created := createDraftTrip(t)
+	created := createDraftTrip(t, fixture.app)
 
 	require.Equal(t, createBefore+1, testutil.ToFloat64(
-		testMetrics.TripCreateTotal.WithLabelValues(observability.ResultSuccess),
+		fixture.metrics.TripCreateTotal.WithLabelValues(observability.ResultSuccess),
 	))
 
 	publishBefore := testutil.ToFloat64(
-		testMetrics.TripPublishTotal.WithLabelValues(observability.ResultSuccess),
+		fixture.metrics.TripPublishTotal.WithLabelValues(observability.ResultSuccess),
 	)
 
-	resp := sendMoveTripDraftToPublished(t, api.MoveTripDraftToPublishedRequest{
+	resp := sendMoveTripDraftToPublished(t, fixture.app, api.MoveTripDraftToPublishedRequest{
 		TripID:   created.ID.String(),
 		ClientID: created.DriverID.String(),
 	})
@@ -34,6 +38,6 @@ func TestServer_ProcessMetrics(t *testing.T) {
 
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 	require.Equal(t, publishBefore+1, testutil.ToFloat64(
-		testMetrics.TripPublishTotal.WithLabelValues(observability.ResultSuccess),
+		fixture.metrics.TripPublishTotal.WithLabelValues(observability.ResultSuccess),
 	))
 }

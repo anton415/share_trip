@@ -3,8 +3,9 @@ package api_test
 import (
 	"context"
 	"database/sql"
-	"log"
+	"fmt"
 	"os"
+	"sync"
 	"testing"
 	"time"
 
@@ -13,6 +14,7 @@ import (
 	_ "github.com/jackc/pgx/v5/stdlib"
 	"github.com/pressly/goose/v3"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/modules/postgres"
 
 	"job4j.ru/share-trip/internal/api"
@@ -23,17 +25,34 @@ import (
 )
 
 var (
-	testCtx       context.Context
-	testDB        *sql.DB
-	testPool      *pgxpool.Pool
-	testApp       *fiber.App
-	testContainer *postgres.PostgresContainer
-	testMetrics   *observability.Metrics
+	testCtx              context.Context
+	testDB               *sql.DB
+	testPool             *pgxpool.Pool
+	testContainer        *postgres.PostgresContainer
+	integrationSetupOnce sync.Once
+	integrationSetupErr  error
 )
 
 func TestMain(m *testing.M) {
 	testCtx = context.Background()
+	code := m.Run()
+	cleanupIntegration()
+	os.Exit(code)
+}
 
+func requireIntegration(t *testing.T) {
+	t.Helper()
+	testcontainers.SkipIfProviderIsNotHealthy(t)
+
+	integrationSetupOnce.Do(func() {
+		integrationSetupErr = setupIntegration()
+	})
+	if integrationSetupErr != nil {
+		t.Fatalf("setup integration tests: %v", integrationSetupErr)
+	}
+}
+
+func setupIntegration() error {
 	var err error
 
 	testContainer, err = postgres.Run(
@@ -44,7 +63,7 @@ func TestMain(m *testing.M) {
 		postgres.WithPassword("password"),
 	)
 	if err != nil {
-		log.Fatalf("start postgres container: %v", err)
+		return fmt.Errorf("start postgres container: %w", err)
 	}
 
 	dsn, err := testContainer.ConnectionString(
@@ -52,43 +71,59 @@ func TestMain(m *testing.M) {
 		"sslmode=disable",
 	)
 	if err != nil {
-		log.Fatalf("get connection string: %v", err)
+		return fmt.Errorf("get connection string: %w", err)
 	}
 
 	testDB, err = sql.Open("pgx", dsn)
 	if err != nil {
-		log.Fatalf("open sql db: %v", err)
+		return fmt.Errorf("open sql db: %w", err)
 	}
 
-	waitReady(testDB)
+	if err = waitReady(testDB); err != nil {
+		return err
+	}
 
 	if err = goose.SetDialect("postgres"); err != nil {
-		log.Fatalf("set goose dialect: %v", err)
+		return fmt.Errorf("set goose dialect: %w", err)
 	}
 
 	if err = goose.Up(testDB, "../../migrations"); err != nil {
-		log.Fatalf("run migrations: %v", err)
+		return fmt.Errorf("run migrations: %w", err)
 	}
 
 	testPool, err = pgxpool.New(testCtx, dsn)
 	if err != nil {
-		log.Fatalf("create pgx pool: %v", err)
+		return fmt.Errorf("create pgx pool: %w", err)
 	}
 
-	registry := prometheus.NewRegistry()
-	testMetrics = observability.New(registry)
+	return nil
+}
 
-	tripRepository := repo.NewPostgresTripRepository(testPool, testMetrics)
-	tripService := service.NewTripService(tripRepository, testPool, testMetrics)
+type testFixture struct {
+	app     *fiber.App
+	metrics *observability.Metrics
+}
+
+func newTestFixture() testFixture {
+	registry := prometheus.NewRegistry()
+	appMetrics := observability.New(registry)
+
+	tripRepository := repo.NewPostgresTripRepository(testPool, appMetrics)
+	tripService := service.NewTripService(tripRepository, testPool, appMetrics)
 
 	server := api.NewServer(tripService, testPool, registry)
 
-	testApp = fiber.New()
-	testApp.Use(middleware.NewHTTPMetricsMiddleware(testMetrics))
-	server.RegisterRoutes(testApp)
+	app := fiber.New()
+	app.Use(middleware.NewHTTPMetricsMiddleware(appMetrics))
+	server.RegisterRoutes(app)
 
-	code := m.Run()
+	return testFixture{
+		app:     app,
+		metrics: appMetrics,
+	}
+}
 
+func cleanupIntegration() {
 	if testPool != nil {
 		testPool.Close()
 	}
@@ -98,27 +133,26 @@ func TestMain(m *testing.M) {
 	if testContainer != nil {
 		_ = testContainer.Terminate(testCtx)
 	}
-
-	os.Exit(code)
 }
 
-func waitReady(db *sql.DB) {
+func waitReady(db *sql.DB) error {
 	deadline := time.Now().Add(30 * time.Second)
+	var pingErr error
 
 	for time.Now().Before(deadline) {
 		ctx, cancel := context.WithTimeout(
 			context.Background(),
 			2*time.Second,
 		)
-		err := db.PingContext(ctx)
+		pingErr = db.PingContext(ctx)
 		cancel()
 
-		if err == nil {
-			return
+		if pingErr == nil {
+			return nil
 		}
 
 		time.Sleep(500 * time.Millisecond)
 	}
 
-	log.Fatalf("database is not ready after timeout")
+	return fmt.Errorf("database is not ready after timeout: %w", pingErr)
 }

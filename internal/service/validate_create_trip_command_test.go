@@ -9,6 +9,8 @@ import (
 )
 
 func TestValidateCreateTripCommand(t *testing.T) {
+	t.Parallel()
+
 	command := CreateTripCommand{
 		DriverID:      uuid.Nil,
 		FromPoint:     "Moscow",

@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
@@ -16,7 +17,12 @@ import (
 )
 
 func TestServer_CreateTrip(t *testing.T) {
+	requireIntegration(t)
+	t.Parallel()
+
 	t.Run("validation error - идентификатор водителя обязателен", func(t *testing.T) {
+		t.Parallel()
+
 		tests := []struct {
 			name     string
 			driverID string
@@ -27,6 +33,9 @@ func TestServer_CreateTrip(t *testing.T) {
 
 		for _, tt := range tests {
 			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				fixture := newTestFixture()
 				payload := api.CreateTripRequest{
 					DriverID:       tt.driverID,
 					FromPoint:      "Moscow",
@@ -35,7 +44,7 @@ func TestServer_CreateTrip(t *testing.T) {
 					AvailableSeats: 3,
 				}
 
-				resp := sendCreateTrip(t, payload)
+				resp := sendCreateTrip(t, fixture.app, payload)
 				defer closeResponseBody(t, resp.Body)
 
 				require.Equal(t, http.StatusBadRequest, resp.StatusCode)
@@ -45,6 +54,9 @@ func TestServer_CreateTrip(t *testing.T) {
 	})
 
 	t.Run("validation error - идентификатор водителя должен быть UUID", func(t *testing.T) {
+		t.Parallel()
+
+		fixture := newTestFixture()
 		payload := api.CreateTripRequest{
 			DriverID:       "not-a-uuid",
 			FromPoint:      "Moscow",
@@ -53,7 +65,7 @@ func TestServer_CreateTrip(t *testing.T) {
 			AvailableSeats: 3,
 		}
 
-		resp := sendCreateTrip(t, payload)
+		resp := sendCreateTrip(t, fixture.app, payload)
 		defer closeResponseBody(t, resp.Body)
 
 		require.Equal(t, http.StatusBadRequest, resp.StatusCode)
@@ -61,6 +73,9 @@ func TestServer_CreateTrip(t *testing.T) {
 	})
 
 	t.Run("success - создание поездки", func(t *testing.T) {
+		t.Parallel()
+
+		fixture := newTestFixture()
 		departureTime := time.Now().
 			UTC().
 			Add(24 * time.Hour).
@@ -74,7 +89,7 @@ func TestServer_CreateTrip(t *testing.T) {
 			AvailableSeats: 3,
 		}
 
-		resp := sendCreateTrip(t, payload)
+		resp := sendCreateTrip(t, fixture.app, payload)
 		defer func() {
 			if err := resp.Body.Close(); err != nil {
 				t.Errorf("close response body: %v", err)
@@ -108,7 +123,11 @@ func TestServer_CreateTrip(t *testing.T) {
 	})
 }
 
-func sendCreateTrip(t *testing.T, payload api.CreateTripRequest) *http.Response {
+func sendCreateTrip(
+	t *testing.T,
+	app *fiber.App,
+	payload api.CreateTripRequest,
+) *http.Response {
 	t.Helper()
 
 	body, err := json.Marshal(payload)
@@ -122,7 +141,7 @@ func sendCreateTrip(t *testing.T, payload api.CreateTripRequest) *http.Response 
 	require.NoError(t, err)
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := testApp.Test(req, -1)
+	resp, err := app.Test(req, -1)
 	require.NoError(t, err)
 
 	return resp

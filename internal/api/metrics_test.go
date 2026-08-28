@@ -9,12 +9,16 @@ import (
 )
 
 func TestServer_Metrics(t *testing.T) {
-	testMetrics.TripCreateTotal.WithLabelValues("success").Inc()
+	requireIntegration(t)
+	t.Parallel()
+
+	fixture := newTestFixture()
+	fixture.metrics.TripCreateTotal.WithLabelValues("success").Inc()
 
 	req, err := http.NewRequest(http.MethodGet, "/metrics", nil)
 	require.NoError(t, err)
 
-	resp, err := testApp.Test(req, -1)
+	resp, err := fixture.app.Test(req, -1)
 	require.NoError(t, err)
 	defer closeResponseBody(t, resp.Body)
 
