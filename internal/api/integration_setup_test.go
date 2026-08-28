@@ -18,7 +18,7 @@ import (
 	"job4j.ru/share-trip/internal/api"
 	"job4j.ru/share-trip/internal/middleware"
 	observability "job4j.ru/share-trip/internal/observability/metrics"
-	"job4j.ru/share-trip/internal/repo"
+	"job4j.ru/share-trip/internal/repository"
 	"job4j.ru/share-trip/internal/service"
 )
 

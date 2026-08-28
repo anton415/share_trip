@@ -125,7 +125,7 @@ make down
 | --- | --- |
 | [`api`](internal/api) | HTTP-ручки, транспортные DTO, маршруты и преобразование ошибок в HTTP-ответы. |
 | [`domain`](internal/domain) | Доменные сущности, ошибки и бизнес-правила. |
-| [`repo`](internal/repo) | Реализация хранения поездок и исходящих событий в PostgreSQL. |
+| [`repository`](internal/repository) | Реализация хранения поездок и исходящих событий в PostgreSQL. |
 | [`service`](internal/service) | Оркестрация прикладных сценариев и управление транзакциями. |
 
 Технические пакеты вынесены отдельно: `config` загружает конфигурацию, `db` создаёт подключение к PostgreSQL, `middleware` содержит сквозные HTTP-компоненты, а `observability` объединяет настройку логирования, контекст логов и метрики.
@@ -162,7 +162,7 @@ Go компилирует все файлы `.go`, не относящиеся �
 | Требование | Реализация | Интеграционный тест |
 | --- | --- | --- |
 | Вернуть `403`, если `clientId != trip.DriverID` | [Проверка доменного правила](internal/domain/publish_trip.go), [преобразование в HTTP-ответ](internal/api/write_fiber_service_error.go) | [Сценарий запрета доступа](internal/api/move_trip_draft_to_published_test.go) |
-| Вернуть `404`, если поездки нет | [Преобразование `pgx.ErrNoRows`](internal/repo/trip.go), [преобразование в HTTP-ответ](internal/api/write_fiber_service_error.go) | [Сценарий отсутствующей поездки](internal/api/move_trip_draft_to_published_test.go) |
+| Вернуть `404`, если поездки нет | [Преобразование `pgx.ErrNoRows`](internal/repository/trip.go), [преобразование в HTTP-ответ](internal/api/write_fiber_service_error.go) | [Сценарий отсутствующей поездки](internal/api/move_trip_draft_to_published_test.go) |
 | Вернуть `409`, если поездка не в статусе `draft` | [Проверка доменного правила](internal/domain/publish_trip.go), [преобразование в HTTP-ответ](internal/api/write_fiber_service_error.go) | [Сценарий конфликта статусов](internal/api/move_trip_draft_to_published_test.go) |
 | Вернуть `204`, если поездка уже в статусе `published` | [Проверка доменного правила](internal/domain/publish_trip.go), [преобразование в HTTP-ответ](internal/api/move_trip_draft_to_published.go) | [Сценарий ответа без содержимого](internal/api/move_trip_draft_to_published_test.go) |
 

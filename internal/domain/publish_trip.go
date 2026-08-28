@@ -7,6 +7,8 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
 )
 
 type PublishTripRequest struct {
@@ -23,6 +25,15 @@ func (u *TripUsecase) PublishTrip(
 	tx pgx.Tx,
 	req PublishTripRequest,
 ) (*PublishTripResponse, error) {
+	ctx, span := otel.Tracer("TripUsecase").
+		Start(ctx, "TripUsecase.PublishTrip")
+	defer span.End()
+
+	span.SetAttributes(
+		attribute.String("trip_id", req.TripID.String()),
+		attribute.String("client_id", req.ClientID.String()),
+	)
+
 	trip, err := u.tripRepo.GetForUpdateByID(ctx, tx, req.TripID)
 	if err != nil {
 		return nil, fmt.Errorf("tripRepo.GetForUpdateByID: %w", err)

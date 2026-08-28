@@ -7,6 +7,8 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
 
 	"job4j.ru/share-trip/internal/domain"
 	observability "job4j.ru/share-trip/internal/observability/metrics"
@@ -25,6 +27,15 @@ func (s *TripService) PublishTrip(ctx context.Context, command PublishTripComman
 		s.metrics.TripPublishDuration.WithLabelValues(result).
 			Observe(time.Since(started).Seconds())
 	}()
+
+	ctx, span := otel.Tracer("TripService").
+		Start(ctx, "TripService.PublishTrip")
+	defer span.End()
+
+	span.SetAttributes(
+		attribute.String("trip_id", command.TripID.String()),
+		attribute.String("client_id", command.ClientID.String()),
+	)
 
 	resp, err := tx(ctx, s.pool, func(tx pgx.Tx) (*domain.PublishTripResponse, error) {
 		return s.tripUsecase.PublishTrip(ctx, tx, domain.PublishTripRequest{

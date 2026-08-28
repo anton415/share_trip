@@ -6,6 +6,8 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
 
 	"job4j.ru/share-trip/internal/domain"
 	"job4j.ru/share-trip/internal/service"
@@ -60,7 +62,18 @@ func (s *Server) moveTripDraftToPublished(c *fiber.Ctx) error {
 		})
 	}
 
-	publishedTripID, err := s.trips.PublishTrip(c.UserContext(), service.PublishTripCommand{
+	ctx, span := otel.Tracer("trip-api").
+		Start(c.UserContext(), "PublishTripHandler")
+	defer span.End()
+
+	c.Set("trace-id", span.SpanContext().TraceID().String())
+
+	span.SetAttributes(
+		attribute.String("trip_id", tripID.String()),
+		attribute.String("client_id", clientID.String()),
+	)
+
+	publishedTripID, err := s.trips.PublishTrip(ctx, service.PublishTripCommand{
 		TripID:   tripID,
 		ClientID: clientID,
 	})

@@ -85,6 +85,28 @@ services:
     depends_on:
       - loki
 
+  jaeger:
+    image: jaegertracing/all-in-one:1.76.0
+    container_name: share_trip_jaeger
+    ports:
+      - "16686:16686" # UI
+      - "4317:4317"   # OTLP gRPC
+      - "4318:4318"   # OTLP HTTP
+      - "14269:14269" # admin / metrics
+    environment:
+      COLLECTOR_OTLP_ENABLED: "true"
+
+  otel-collector:
+    image: otel/opentelemetry-collector:latest
+    container_name: share_trip_otel_collector
+    command: ["--config=/etc/otelcol/config.yaml"]
+    volumes:
+      - ../otel-collector/config.yaml:/etc/otelcol/config.yaml:ro
+    ports:
+      - "4319:4318"
+    depends_on:
+      - jaeger
+
 volumes:
   sharetrip_pgdata:
   loki_data:
