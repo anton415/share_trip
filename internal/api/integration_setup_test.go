@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 	_ "github.com/jackc/pgx/v5/stdlib"
 	"github.com/pressly/goose/v3"
@@ -22,6 +23,11 @@ import (
 	observability "job4j.ru/share-trip/internal/observability/metrics"
 	"job4j.ru/share-trip/internal/repository"
 	"job4j.ru/share-trip/internal/service"
+)
+
+const (
+	testKeycloakClientID = "sharetrip-api"
+	testSubjectHeader    = "X-Test-Subject"
 )
 
 var (
@@ -100,8 +106,9 @@ func setupIntegration() error {
 }
 
 type testFixture struct {
-	app     *fiber.App
-	metrics *observability.Metrics
+	app      *fiber.App
+	clientID uuid.UUID
+	metrics  *observability.Metrics
 }
 
 func newTestFixture() testFixture {
@@ -112,15 +119,38 @@ func newTestFixture() testFixture {
 	tripService := service.NewTripService(tripRepository, testPool, appMetrics)
 
 	server := api.NewServer(tripService, testPool, registry)
+	clientID := uuid.New()
 
 	app := fiber.New()
 	app.Use(middleware.NewHTTPMetricsMiddleware(appMetrics))
-	server.RegisterRoutes(app)
+	app.Use(func(c *fiber.Ctx) error {
+		subject := c.Get(testSubjectHeader)
+		if subject == "" {
+			subject = clientID.String()
+		}
+
+		c.Locals(middleware.KeycloakClaimsKey, &middleware.KeycloakClaims{
+			Subject: subject,
+			ResourceAccess: map[string]struct {
+				Roles []string `json:"roles"`
+			}{
+				testKeycloakClientID: {Roles: []string{"client"}},
+			},
+		})
+
+		return c.Next()
+	})
+	server.RegisterRoutes(app, passThrough, testKeycloakClientID)
 
 	return testFixture{
-		app:     app,
-		metrics: appMetrics,
+		app:      app,
+		clientID: clientID,
+		metrics:  appMetrics,
 	}
+}
+
+func passThrough(c *fiber.Ctx) error {
+	return c.Next()
 }
 
 func cleanupIntegration() {

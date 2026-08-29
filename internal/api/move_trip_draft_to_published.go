@@ -14,8 +14,7 @@ import (
 )
 
 type MoveTripDraftToPublishedRequest struct {
-	TripID   string `json:"tripId"`
-	ClientID string `json:"clientId"`
+	TripID string `json:"tripId"`
 }
 
 type MoveTripDraftToPublishedResponse struct {
@@ -23,6 +22,11 @@ type MoveTripDraftToPublishedResponse struct {
 }
 
 func (s *Server) moveTripDraftToPublished(c *fiber.Ctx) error {
+	clientID, err := clientIDFromClaims(c)
+	if err != nil {
+		return err
+	}
+
 	var request MoveTripDraftToPublishedRequest
 
 	if err := c.BodyParser(&request); err != nil {
@@ -44,21 +48,6 @@ func (s *Server) moveTripDraftToPublished(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusBadRequest).JSON(errorResponse{
 			Code:    "VALIDATION_ERROR",
 			Message: "tripId must be a valid UUID",
-		})
-	}
-
-	if strings.TrimSpace(request.ClientID) == "" {
-		return c.Status(fiber.StatusBadRequest).JSON(errorResponse{
-			Code:    "VALIDATION_ERROR",
-			Message: "clientId is required",
-		})
-	}
-
-	clientID, err := uuid.Parse(request.ClientID)
-	if err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(errorResponse{
-			Code:    "VALIDATION_ERROR",
-			Message: "clientId must be a valid UUID",
 		})
 	}
 

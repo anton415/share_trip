@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/gofiber/fiber/v2"
-	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
 	"job4j.ru/share-trip/internal/api"
@@ -19,58 +18,6 @@ import (
 func TestServer_CreateTrip(t *testing.T) {
 	requireIntegration(t)
 	t.Parallel()
-
-	t.Run("validation error - идентификатор водителя обязателен", func(t *testing.T) {
-		t.Parallel()
-
-		tests := []struct {
-			name     string
-			driverID string
-		}{
-			{name: "only spaces", driverID: "   "},
-			{name: "nil UUID", driverID: uuid.Nil.String()},
-		}
-
-		for _, tt := range tests {
-			t.Run(tt.name, func(t *testing.T) {
-				t.Parallel()
-
-				fixture := newTestFixture()
-				payload := api.CreateTripRequest{
-					DriverID:       tt.driverID,
-					FromPoint:      "Moscow",
-					ToPoint:        "Saint Petersburg",
-					DepartureTime:  time.Now().UTC().Add(24 * time.Hour),
-					AvailableSeats: 3,
-				}
-
-				resp := sendCreateTrip(t, fixture.app, payload)
-				defer closeResponseBody(t, resp.Body)
-
-				require.Equal(t, http.StatusBadRequest, resp.StatusCode)
-				requireErrorResponse(t, resp, "VALIDATION_ERROR", "driverId is required")
-			})
-		}
-	})
-
-	t.Run("validation error - идентификатор водителя должен быть UUID", func(t *testing.T) {
-		t.Parallel()
-
-		fixture := newTestFixture()
-		payload := api.CreateTripRequest{
-			DriverID:       "not-a-uuid",
-			FromPoint:      "Moscow",
-			ToPoint:        "Saint Petersburg",
-			DepartureTime:  time.Now().UTC().Add(24 * time.Hour),
-			AvailableSeats: 3,
-		}
-
-		resp := sendCreateTrip(t, fixture.app, payload)
-		defer closeResponseBody(t, resp.Body)
-
-		require.Equal(t, http.StatusBadRequest, resp.StatusCode)
-		requireErrorResponse(t, resp, "VALIDATION_ERROR", "driverId must be a valid UUID")
-	})
 
 	t.Run("success - создание поездки", func(t *testing.T) {
 		t.Parallel()
@@ -82,7 +29,6 @@ func TestServer_CreateTrip(t *testing.T) {
 			Truncate(time.Microsecond)
 
 		payload := api.CreateTripRequest{
-			DriverID:       uuid.NewString(),
 			FromPoint:      "Moscow",
 			ToPoint:        "Saint Petersburg",
 			DepartureTime:  departureTime,
@@ -111,7 +57,7 @@ func TestServer_CreateTrip(t *testing.T) {
 		require.WithinDuration(t, payload.DepartureTime, got.DepartureTime, time.Microsecond)
 		require.Equal(t, api.CreateTripResponse{
 			ID:             got.ID,
-			DriverID:       uuid.MustParse(payload.DriverID),
+			DriverID:       fixture.clientID,
 			FromPoint:      payload.FromPoint,
 			ToPoint:        payload.ToPoint,
 			DepartureTime:  got.DepartureTime,

@@ -8,15 +8,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gofiber/fiber/v2"
-	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
 	"job4j.ru/share-trip/internal/api"
 	"job4j.ru/share-trip/internal/domain"
 )
 
-func createDraftTrip(t *testing.T, app *fiber.App) api.CreateTripResponse {
+func createDraftTrip(t *testing.T, fixture testFixture) api.CreateTripResponse {
 	t.Helper()
 
 	departureTime := time.Now().
@@ -25,7 +23,6 @@ func createDraftTrip(t *testing.T, app *fiber.App) api.CreateTripResponse {
 		Truncate(time.Microsecond)
 
 	payload := api.CreateTripRequest{
-		DriverID:       uuid.NewString(),
 		FromPoint:      "Moscow",
 		ToPoint:        "Saint Petersburg",
 		DepartureTime:  departureTime,
@@ -39,7 +36,7 @@ func createDraftTrip(t *testing.T, app *fiber.App) api.CreateTripResponse {
 	require.NoError(t, err)
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := app.Test(req, -1)
+	resp, err := fixture.app.Test(req, -1)
 	require.NoError(t, err)
 	defer closeResponseBody(t, resp.Body)
 
@@ -57,7 +54,7 @@ func createDraftTrip(t *testing.T, app *fiber.App) api.CreateTripResponse {
 	require.WithinDuration(t, payload.DepartureTime, created.DepartureTime, time.Microsecond)
 	require.Equal(t, api.CreateTripResponse{
 		ID:             created.ID,
-		DriverID:       uuid.MustParse(payload.DriverID),
+		DriverID:       fixture.clientID,
 		FromPoint:      payload.FromPoint,
 		ToPoint:        payload.ToPoint,
 		DepartureTime:  created.DepartureTime,

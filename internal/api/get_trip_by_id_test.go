@@ -34,7 +34,7 @@ func TestServer_GetTripByID(t *testing.T) {
 		t.Parallel()
 
 		fixture := newTestFixture()
-		created := createDraftTrip(t, fixture.app)
+		created := createDraftTrip(t, fixture)
 
 		req, err := http.NewRequest(http.MethodGet, "/trip/"+created.ID.String(), nil)
 		require.NoError(t, err)

@@ -1,13 +1,29 @@
 package api
 
-import "github.com/gofiber/fiber/v2"
+import (
+	"github.com/gofiber/fiber/v2"
 
-func (s *Server) RegisterRoutes(router fiber.Router) {
+	"job4j.ru/share-trip/internal/middleware"
+)
+
+func (s *Server) RegisterRoutes(
+	router fiber.Router,
+	keycloakAuth fiber.Handler,
+	keycloakClientID string,
+) {
 	router.Get("/ready", s.ready)
 	router.Get("/metrics", s.metricsHandler())
 
-	trips := router.Group("/trip")
-	trips.Post("/create", s.createTrip)
+	trips := router.Group("/trip", keycloakAuth)
+	trips.Post(
+		"/create",
+		middleware.RequireClientRole(keycloakClientID, "client"),
+		s.createTrip,
+	)
 	trips.Post("/publish", s.moveTripDraftToPublished)
-	trips.Get("/:id", s.getTripByID)
+	trips.Get(
+		"/:id",
+		middleware.RequireClientRole(keycloakClientID, "client"),
+		s.getTripByID,
+	)
 }

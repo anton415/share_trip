@@ -20,7 +20,7 @@ func TestServer_ProcessMetrics(t *testing.T) {
 		fixture.metrics.TripCreateTotal.WithLabelValues(observability.ResultSuccess),
 	)
 
-	created := createDraftTrip(t, fixture.app)
+	created := createDraftTrip(t, fixture)
 
 	require.Equal(t, createBefore+1, testutil.ToFloat64(
 		fixture.metrics.TripCreateTotal.WithLabelValues(observability.ResultSuccess),
@@ -31,8 +31,7 @@ func TestServer_ProcessMetrics(t *testing.T) {
 	)
 
 	resp := sendMoveTripDraftToPublished(t, fixture.app, api.MoveTripDraftToPublishedRequest{
-		TripID:   created.ID.String(),
-		ClientID: created.DriverID.String(),
+		TripID: created.ID.String(),
 	})
 	defer closeResponseBody(t, resp.Body)
 

@@ -31,7 +31,7 @@ func TestServer_RepositoryMetrics(t *testing.T) {
 		observability.ResultSuccess,
 	)
 
-	created := createDraftTrip(t, fixture.app)
+	created := createDraftTrip(t, fixture)
 
 	require.Equal(t, createCounterBefore+1, repositoryCounterValue(
 		fixture.metrics,
@@ -60,8 +60,7 @@ func TestServer_RepositoryMetrics(t *testing.T) {
 	}
 
 	publishResp := sendMoveTripDraftToPublished(t, fixture.app, api.MoveTripDraftToPublishedRequest{
-		TripID:   created.ID.String(),
-		ClientID: created.DriverID.String(),
+		TripID: created.ID.String(),
 	})
 	require.Equal(t, http.StatusOK, publishResp.StatusCode)
 	closeResponseBody(t, publishResp.Body)
@@ -123,8 +122,7 @@ func TestServer_RepositoryMetrics(t *testing.T) {
 	)
 
 	notFoundPublishResp := sendMoveTripDraftToPublished(t, fixture.app, api.MoveTripDraftToPublishedRequest{
-		TripID:   uuid.NewString(),
-		ClientID: uuid.NewString(),
+		TripID: uuid.NewString(),
 	})
 	require.Equal(t, http.StatusNotFound, notFoundPublishResp.StatusCode)
 	closeResponseBody(t, notFoundPublishResp.Body)

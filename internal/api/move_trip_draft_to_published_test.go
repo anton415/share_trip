@@ -20,94 +20,39 @@ func TestServer_MoveTripDraftToPublished(t *testing.T) {
 	requireIntegration(t)
 	t.Parallel()
 
-	t.Run("validation error - обязательные идентификаторы отсутствуют", func(t *testing.T) {
+	t.Run("validation error - идентификатор поездки отсутствует", func(t *testing.T) {
 		t.Parallel()
 
-		tests := []struct {
-			name            string
-			payload         api.MoveTripDraftToPublishedRequest
-			expectedMessage string
-		}{
-			{
-				name: "trip id is empty",
-				payload: api.MoveTripDraftToPublishedRequest{
-					TripID:   "",
-					ClientID: uuid.NewString(),
-				},
-				expectedMessage: "tripId is required",
-			},
-			{
-				name: "client id contains only spaces",
-				payload: api.MoveTripDraftToPublishedRequest{
-					TripID:   uuid.NewString(),
-					ClientID: "   ",
-				},
-				expectedMessage: "clientId is required",
-			},
-		}
+		fixture := newTestFixture()
+		resp := sendMoveTripDraftToPublished(
+			t,
+			fixture.app,
+			api.MoveTripDraftToPublishedRequest{},
+		)
+		defer closeResponseBody(t, resp.Body)
 
-		for _, tt := range tests {
-			t.Run(tt.name, func(t *testing.T) {
-				t.Parallel()
-
-				fixture := newTestFixture()
-				resp := sendMoveTripDraftToPublished(t, fixture.app, tt.payload)
-				defer closeResponseBody(t, resp.Body)
-
-				require.Equal(t, http.StatusBadRequest, resp.StatusCode)
-				requireErrorResponse(
-					t,
-					resp,
-					"VALIDATION_ERROR",
-					tt.expectedMessage,
-				)
-			})
-		}
+		require.Equal(t, http.StatusBadRequest, resp.StatusCode)
+		requireErrorResponse(t, resp, "VALIDATION_ERROR", "tripId is required")
 	})
 
-	t.Run("validation error - идентификаторы должны быть UUID", func(t *testing.T) {
+	t.Run("validation error - идентификатор поездки должен быть UUID", func(t *testing.T) {
 		t.Parallel()
 
-		tests := []struct {
-			name            string
-			payload         api.MoveTripDraftToPublishedRequest
-			expectedMessage string
-		}{
-			{
-				name: "invalid trip id",
-				payload: api.MoveTripDraftToPublishedRequest{
-					TripID:   "not-a-uuid",
-					ClientID: uuid.NewString(),
-				},
-				expectedMessage: "tripId must be a valid UUID",
-			},
-			{
-				name: "invalid client id",
-				payload: api.MoveTripDraftToPublishedRequest{
-					TripID:   uuid.NewString(),
-					ClientID: "not-a-uuid",
-				},
-				expectedMessage: "clientId must be a valid UUID",
-			},
-		}
+		fixture := newTestFixture()
+		resp := sendMoveTripDraftToPublished(
+			t,
+			fixture.app,
+			api.MoveTripDraftToPublishedRequest{TripID: "not-a-uuid"},
+		)
+		defer closeResponseBody(t, resp.Body)
 
-		for _, tt := range tests {
-			t.Run(tt.name, func(t *testing.T) {
-				t.Parallel()
-
-				fixture := newTestFixture()
-				resp := sendMoveTripDraftToPublished(t, fixture.app, tt.payload)
-				defer closeResponseBody(t, resp.Body)
-
-				require.Equal(t, http.StatusBadRequest, resp.StatusCode)
-				requireErrorResponse(
-					t,
-					resp,
-					"VALIDATION_ERROR",
-					tt.expectedMessage,
-				)
-			})
-		}
+		require.Equal(t, http.StatusBadRequest, resp.StatusCode)
+		requireErrorResponse(
+			t,
+			resp,
+			"VALIDATION_ERROR",
+			"tripId must be a valid UUID",
+		)
 	})
 
 	t.Run("validation error - тело запроса должно быть валидным JSON", func(t *testing.T) {
@@ -134,11 +79,10 @@ func TestServer_MoveTripDraftToPublished(t *testing.T) {
 		t.Parallel()
 
 		fixture := newTestFixture()
-		created := createDraftTrip(t, fixture.app)
+		created := createDraftTrip(t, fixture)
 
 		publishResp := sendMoveTripDraftToPublished(t, fixture.app, api.MoveTripDraftToPublishedRequest{
-			TripID:   created.ID.String(),
-			ClientID: created.DriverID.String(),
+			TripID: created.ID.String(),
 		})
 		defer closeResponseBody(t, publishResp.Body)
 
@@ -181,12 +125,11 @@ func TestServer_MoveTripDraftToPublished(t *testing.T) {
 		t.Parallel()
 
 		fixture := newTestFixture()
-		created := createDraftTrip(t, fixture.app)
+		created := createDraftTrip(t, fixture)
 
 		resp := sendMoveTripDraftToPublished(t, fixture.app, api.MoveTripDraftToPublishedRequest{
-			TripID:   created.ID.String(),
-			ClientID: uuid.NewString(),
-		})
+			TripID: created.ID.String(),
+		}, uuid.NewString())
 		defer closeResponseBody(t, resp.Body)
 
 		require.Equal(t, http.StatusForbidden, resp.StatusCode)
@@ -198,8 +141,7 @@ func TestServer_MoveTripDraftToPublished(t *testing.T) {
 
 		fixture := newTestFixture()
 		resp := sendMoveTripDraftToPublished(t, fixture.app, api.MoveTripDraftToPublishedRequest{
-			TripID:   uuid.NewString(),
-			ClientID: uuid.NewString(),
+			TripID: uuid.NewString(),
 		})
 		defer closeResponseBody(t, resp.Body)
 
@@ -211,7 +153,7 @@ func TestServer_MoveTripDraftToPublished(t *testing.T) {
 		t.Parallel()
 
 		fixture := newTestFixture()
-		created := createDraftTrip(t, fixture.app)
+		created := createDraftTrip(t, fixture)
 
 		_, err := testPool.Exec(
 			testCtx,
@@ -221,8 +163,7 @@ func TestServer_MoveTripDraftToPublished(t *testing.T) {
 		require.NoError(t, err)
 
 		resp := sendMoveTripDraftToPublished(t, fixture.app, api.MoveTripDraftToPublishedRequest{
-			TripID:   created.ID.String(),
-			ClientID: created.DriverID.String(),
+			TripID: created.ID.String(),
 		})
 		defer closeResponseBody(t, resp.Body)
 
@@ -234,10 +175,9 @@ func TestServer_MoveTripDraftToPublished(t *testing.T) {
 		t.Parallel()
 
 		fixture := newTestFixture()
-		created := createDraftTrip(t, fixture.app)
+		created := createDraftTrip(t, fixture)
 		payload := api.MoveTripDraftToPublishedRequest{
-			TripID:   created.ID.String(),
-			ClientID: created.DriverID.String(),
+			TripID: created.ID.String(),
 		}
 
 		firstResp := sendMoveTripDraftToPublished(t, fixture.app, payload)
@@ -267,6 +207,7 @@ func sendMoveTripDraftToPublished(
 	t *testing.T,
 	app *fiber.App,
 	payload api.MoveTripDraftToPublishedRequest,
+	subject ...string,
 ) *http.Response {
 	t.Helper()
 
@@ -276,6 +217,9 @@ func sendMoveTripDraftToPublished(
 	req, err := http.NewRequest(http.MethodPost, "/trip/publish", bytes.NewReader(body))
 	require.NoError(t, err)
 	req.Header.Set("Content-Type", "application/json")
+	if len(subject) > 0 {
+		req.Header.Set(testSubjectHeader, subject[0])
+	}
 
 	resp, err := app.Test(req, -1)
 	require.NoError(t, err)

@@ -70,10 +70,23 @@ func main() {
 	tripService := service.NewTripService(tripRepository, pool, appMetrics)
 	server := api.NewServer(tripService, pool, registry)
 	app := fiber.New()
+	keycloakClientID := config.Env("KEYCLOAK_CLIENT_ID", "sharetrip-api")
+	keycloakClientSecret := config.Env("KEYCLOAK_CLIENT_SECRET", "")
+	if keycloakClientSecret == "" {
+		logger.Error("KEYCLOAK_CLIENT_SECRET is required")
+		os.Exit(1)
+	}
+	keycloakAuth := middleware.KeycloakRefreshTokenMiddleware(
+		middleware.KeycloakConfig{
+			Issuer:       config.Env("KEYCLOAK_ISSUER", "http://localhost:8087/realms/sharetrip"),
+			ClientID:     keycloakClientID,
+			ClientSecret: keycloakClientSecret,
+		},
+	)
 	app.Use(tracing.NewFiberMiddleware())
 	app.Use(middleware.Correlation(logger))
 	app.Use(middleware.NewHTTPMetricsMiddleware(appMetrics))
-	server.RegisterRoutes(app)
+	server.RegisterRoutes(app, keycloakAuth, keycloakClientID)
 
 	addr := config.Env("HTTP_ADDR", ":8080")
 

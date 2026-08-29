@@ -2,7 +2,6 @@ package api
 
 import (
 	"log/slog"
-	"strings"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
@@ -14,7 +13,6 @@ import (
 )
 
 type CreateTripRequest struct {
-	DriverID       string    `json:"driverId"`
 	FromPoint      string    `json:"fromPoint"`
 	ToPoint        string    `json:"toPoint"`
 	DepartureTime  time.Time `json:"departureTime"`
@@ -35,10 +33,15 @@ type CreateTripResponse struct {
 
 func (s *Server) createTrip(c *fiber.Ctx) error {
 	ctx := c.UserContext()
+	driverID, err := clientIDFromClaims(c)
+	if err != nil {
+		return err
+	}
 
 	logger := logctx.Logger(ctx).With(
 		slog.String("server", "TripServer"),
 		slog.String("handler", "CreateTrip"),
+		slog.String("client_id", driverID.String()),
 	)
 
 	var request CreateTripRequest
@@ -53,31 +56,6 @@ func (s *Server) createTrip(c *fiber.Ctx) error {
 			Message: "invalid request body",
 		})
 	}
-
-	if strings.TrimSpace(request.DriverID) == "" {
-		return c.Status(fiber.StatusBadRequest).JSON(errorResponse{
-			Code:    "VALIDATION_ERROR",
-			Message: "driverId is required",
-		})
-	}
-
-	driverID, err := uuid.Parse(request.DriverID)
-	if err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(errorResponse{
-			Code:    "VALIDATION_ERROR",
-			Message: "driverId must be a valid UUID",
-		})
-	}
-	if driverID == uuid.Nil {
-		return c.Status(fiber.StatusBadRequest).JSON(errorResponse{
-			Code:    "VALIDATION_ERROR",
-			Message: "driverId is required",
-		})
-	}
-
-	logger = logger.With(
-		slog.String("client_id", request.DriverID),
-	)
 
 	ctx = logctx.WithLogger(ctx, logger)
 
