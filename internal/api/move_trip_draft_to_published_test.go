@@ -168,7 +168,7 @@ func TestServer_MoveTripDraftToPublished(t *testing.T) {
 		defer closeResponseBody(t, resp.Body)
 
 		require.Equal(t, http.StatusConflict, resp.StatusCode)
-		requireErrorResponse(t, resp, "CONFLICT", "trip is not in draft status")
+		requireErrorResponse(t, resp, "CONFLICT", "invalid trip status")
 	})
 
 	t.Run("no content - поездка уже published", func(t *testing.T) {

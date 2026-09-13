@@ -21,6 +21,7 @@ func (s *Server) RegisterRoutes(
 		s.createTrip,
 	)
 	trips.Post("/publish", s.moveTripDraftToPublished)
+	trips.Post("/start", s.startTrip)
 	trips.Get(
 		"/:id",
 		middleware.RequireClientRole(keycloakClientID, "client"),

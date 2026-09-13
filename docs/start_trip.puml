@@ -1,0 +1,28 @@
+@startuml
+actor Driver
+participant "ShareTrip API" as API
+participant StartTrip
+participant "Contract Service" as Contract
+database "Trips DB" as DB
+Driver -> API: POST /trip/start {tripId}
+API -> StartTrip: StartTrip(ctx, tripId, clientId)
+StartTrip -> DB: Load trip, check driver and published status
+StartTrip -> Contract: POST /contracts/check-service\nclient_id=driver_id, service_code=trip_start
+alt allowed=true
+  StartTrip -> DB: BEGIN; load trip FOR UPDATE
+  StartTrip -> StartTrip: Check driver; Trip.Start()
+  alt still published and same driver
+    StartTrip -> DB: Save started + history; COMMIT
+    API --> Driver: 200 {tripId}
+  else invalid status / driver
+    StartTrip -> DB: ROLLBACK
+    API --> Driver: 409 / 403
+  end
+else allowed=false
+  API --> Driver: 403; trip unchanged
+else timeout / unavailable
+  API --> Driver: 503; trip unchanged
+else invalid response
+  API --> Driver: 502; trip unchanged
+end
+@enduml

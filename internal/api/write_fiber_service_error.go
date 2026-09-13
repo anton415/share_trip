@@ -6,6 +6,7 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 
+	"job4j.ru/share-trip/internal/contractclient"
 	"job4j.ru/share-trip/internal/domain"
 	"job4j.ru/share-trip/internal/service"
 )
@@ -17,6 +18,10 @@ type errorResponse struct {
 
 func writeFiberServiceError(c *fiber.Ctx, err error) error {
 	switch {
+	case errors.Is(err, contractclient.ErrUnavailable):
+		return c.Status(fiber.StatusServiceUnavailable).JSON(errorResponse{Code: "CONTRACT_SERVICE_UNAVAILABLE", Message: "cannot verify company permissions"})
+	case errors.Is(err, contractclient.ErrInvalidResponse):
+		return c.Status(fiber.StatusBadGateway).JSON(errorResponse{Code: "CONTRACT_SERVICE_INVALID_RESPONSE", Message: "invalid contract service response"})
 	case errors.Is(err, service.ErrValidation):
 		return c.Status(fiber.StatusBadRequest).JSON(errorResponse{
 			Code:    "VALIDATION_ERROR",
@@ -35,7 +40,7 @@ func writeFiberServiceError(c *fiber.Ctx, err error) error {
 	case errors.Is(err, domain.ErrConflict):
 		return c.Status(fiber.StatusConflict).JSON(errorResponse{
 			Code:    "CONFLICT",
-			Message: "trip is not in draft status",
+			Message: "invalid trip status",
 		})
 	default:
 		slog.Error("trip request failed", "error", err)

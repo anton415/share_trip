@@ -11,6 +11,7 @@ import (
 
 	"job4j.ru/share-trip/internal/api"
 	"job4j.ru/share-trip/internal/config"
+	"job4j.ru/share-trip/internal/contractclient"
 	"job4j.ru/share-trip/internal/db"
 	"job4j.ru/share-trip/internal/middleware"
 	"job4j.ru/share-trip/internal/observability"
@@ -67,7 +68,12 @@ func main() {
 	registry := prometheus.NewRegistry()
 	appMetrics := metrics.New(registry)
 	tripRepository := repo.NewPostgresTripRepository(pool, appMetrics)
-	tripService := service.NewTripService(tripRepository, pool, appMetrics)
+	contracts := contractclient.New(
+		config.Env("CONTRACT_SERVICE_BASE_URL", "http://localhost:8082"),
+		time.Duration(max(1, config.EnvInt("CONTRACT_SERVICE_TIMEOUT_MS", 2000)))*time.Millisecond,
+		max(0, config.EnvInt("CONTRACT_SERVICE_RETRY_COUNT", 2)),
+	)
+	tripService := service.NewTripService(tripRepository, pool, appMetrics, contracts)
 	server := api.NewServer(tripService, pool, registry)
 	app := fiber.New()
 	keycloakClientID := config.Env("KEYCLOAK_CLIENT_ID", "sharetrip-api")

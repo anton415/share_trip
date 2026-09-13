@@ -116,7 +116,7 @@ func newTestFixture() testFixture {
 	appMetrics := observability.New(registry)
 
 	tripRepository := repo.NewPostgresTripRepository(testPool, appMetrics)
-	tripService := service.NewTripService(tripRepository, testPool, appMetrics)
+	tripService := service.NewTripService(tripRepository, testPool, appMetrics, nil)
 
 	server := api.NewServer(tripService, testPool, registry)
 	clientID := uuid.New()

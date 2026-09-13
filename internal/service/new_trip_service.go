@@ -11,8 +11,10 @@ func NewTripService(
 	repo TripRepository,
 	pool *pgxpool.Pool,
 	metrics *observability.Metrics,
+	contracts ContractChecker,
 ) *TripService {
 	return &TripService{
+		contracts:   contracts,
 		repo:        repo,
 		pool:        pool,
 		tripUsecase: domain.NewTripUsecase(repo),
