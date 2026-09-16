@@ -112,11 +112,15 @@ type testFixture struct {
 }
 
 func newTestFixture() testFixture {
+	return newTestFixtureWithContracts(nil)
+}
+
+func newTestFixtureWithContracts(contracts service.ContractChecker) testFixture {
 	registry := prometheus.NewRegistry()
 	appMetrics := observability.New(registry)
 
 	tripRepository := repo.NewPostgresTripRepository(testPool, appMetrics)
-	tripService := service.NewTripService(tripRepository, testPool, appMetrics, nil)
+	tripService := service.NewTripService(tripRepository, testPool, appMetrics, contracts)
 
 	server := api.NewServer(tripService, testPool, registry)
 	clientID := uuid.New()

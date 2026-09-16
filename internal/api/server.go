@@ -18,7 +18,7 @@ type TripService interface {
 	CreateTrip(ctx context.Context, command service.CreateTripCommand) (domain.Trip, error)
 	GetTripByID(ctx context.Context, id uuid.UUID) (domain.Trip, error)
 	PublishTrip(ctx context.Context, command service.PublishTripCommand) (uuid.UUID, error)
-	StartTrip(ctx context.Context, tripID, clientID uuid.UUID) (uuid.UUID, error)
+	StartTrip(ctx context.Context, command service.StartTripCommand) (uuid.UUID, error)
 }
 
 type Server struct {
