@@ -12,6 +12,8 @@ import (
 )
 
 func TestClientCheckService(t *testing.T) {
+	t.Parallel()
+
 	contractService := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		require.Equal(t, http.MethodPost, r.Method)
 		require.Equal(t, "/contracts/check-service", r.URL.Path)

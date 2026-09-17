@@ -45,6 +45,8 @@ func TestTripServiceStartTrip(t *testing.T) {
 	command := service.StartTripCommand{TripID: uuid.New(), ClientID: uuid.New()}
 
 	t.Run("allowed starts published trip", func(t *testing.T) {
+		t.Parallel()
+
 		ctrl := gomock.NewController(t)
 		contracts := mocks.NewMockContractChecker(ctrl)
 		contracts.EXPECT().
@@ -73,6 +75,8 @@ func TestTripServiceStartTrip(t *testing.T) {
 	})
 
 	t.Run("denied does not start transaction or save", func(t *testing.T) {
+		t.Parallel()
+
 		ctrl := gomock.NewController(t)
 		contracts := mocks.NewMockContractChecker(ctrl)
 		contracts.EXPECT().
@@ -95,6 +99,8 @@ func TestTripServiceStartTrip(t *testing.T) {
 	})
 
 	t.Run("client timeout does not start transaction or save", func(t *testing.T) {
+		t.Parallel()
+
 		ctrl := gomock.NewController(t)
 		contracts := mocks.NewMockContractChecker(ctrl)
 		contracts.EXPECT().
