@@ -17,10 +17,11 @@ import (
 	"job4j.ru/share-trip/internal/api"
 	"job4j.ru/share-trip/internal/contractclient"
 	"job4j.ru/share-trip/internal/domain"
+	"job4j.ru/share-trip/internal/service"
 )
 
 type checkServiceStub struct {
-	result contractclient.CheckResult
+	result service.CheckResult
 	err    error
 }
 
@@ -28,7 +29,7 @@ func (s checkServiceStub) CheckService(
 	_ context.Context,
 	_ string,
 	_ string,
-) (contractclient.CheckResult, error) {
+) (service.CheckResult, error) {
 	return s.result, s.err
 }
 
@@ -40,7 +41,7 @@ func TestServer_StartTrip(t *testing.T) {
 		t.Parallel()
 
 		fixture := newTestFixtureWithContracts(checkServiceStub{
-			result: contractclient.CheckResult{Allowed: true},
+			result: service.CheckResult{Allowed: true},
 		})
 		trip := createPublishedTrip(t, fixture)
 
@@ -61,7 +62,7 @@ func TestServer_StartTrip(t *testing.T) {
 		t.Parallel()
 
 		fixture := newTestFixtureWithContracts(checkServiceStub{
-			result: contractclient.CheckResult{Allowed: false, Reason: "service is disabled"},
+			result: service.CheckResult{Allowed: false, Reason: "service is disabled"},
 		})
 		trip := createPublishedTrip(t, fixture)
 

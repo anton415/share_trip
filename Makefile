@@ -12,12 +12,21 @@ GOOSE_VERSION := v3.26.0
 GOOSE_DRIVER := postgres
 GOLANGCI_LINT := $(TOOLS_BIN)/golangci-lint
 GOLANGCI_LINT_VERSION := v2.11.3
+MOCKGEN_VERSION := v0.6.0
 
-.PHONY: deps fmt lint test coverage build run up down migrate-up migrate-down migrate-status e2e check
+.PHONY: deps install-mockgen generate-mocks generate fmt lint test coverage build run up down migrate-up migrate-down migrate-status e2e check
 
-deps: $(GOOSE) $(GOLANGCI_LINT)
+deps: install-mockgen $(GOOSE) $(GOLANGCI_LINT)
 	go mod tidy
 	go mod download
+
+install-mockgen:
+	go install go.uber.org/mock/mockgen@$(MOCKGEN_VERSION)
+
+generate-mocks: deps
+	go generate ./...
+
+generate: generate-mocks
 
 fmt:
 	go fmt ./...

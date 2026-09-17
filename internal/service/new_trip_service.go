@@ -1,6 +1,9 @@
 package service
 
 import (
+	"context"
+
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"job4j.ru/share-trip/internal/domain"
@@ -14,9 +17,12 @@ func NewTripService(
 	contracts ContractChecker,
 ) *TripService {
 	return &TripService{
-		contracts:   contracts,
-		repo:        repo,
-		pool:        pool,
+		contracts: contracts,
+		repo:      repo,
+		pool:      pool,
+		startTripTx: func(ctx context.Context, block func(pgx.Tx) (*domain.Trip, error)) (*domain.Trip, error) {
+			return tx(ctx, pool, block)
+		},
 		tripUsecase: domain.NewTripUsecase(repo),
 		metrics:     metrics,
 	}

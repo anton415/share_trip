@@ -15,6 +15,11 @@ type StartTripCommand struct {
 	ClientID uuid.UUID
 }
 
+type startTripTransaction func(
+	ctx context.Context,
+	block func(pgx.Tx) (*domain.Trip, error),
+) (*domain.Trip, error)
+
 func (s *TripService) StartTrip(ctx context.Context, command StartTripCommand) (uuid.UUID, error) {
 	started := time.Now()
 	result, err := s.contracts.CheckService(ctx, command.ClientID.String(), "trip_start")
@@ -27,7 +32,7 @@ func (s *TripService) StartTrip(ctx context.Context, command StartTripCommand) (
 	if !result.Allowed {
 		return uuid.Nil, domain.ErrForbidden
 	}
-	updated, err := tx(ctx, s.pool, func(dbtx pgx.Tx) (*domain.Trip, error) {
+	updated, err := s.startTripTx(ctx, func(dbtx pgx.Tx) (*domain.Trip, error) {
 		trip, err := s.repo.GetForUpdateByID(ctx, dbtx, command.TripID)
 		if err != nil {
 			return nil, err

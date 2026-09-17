@@ -6,7 +6,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"job4j.ru/share-trip/internal/contractclient"
 	"job4j.ru/share-trip/internal/domain"
 	observability "job4j.ru/share-trip/internal/observability/metrics"
 )
@@ -21,10 +20,7 @@ type TripService struct {
 	contracts   ContractChecker
 	repo        TripRepository
 	pool        *pgxpool.Pool
+	startTripTx startTripTransaction
 	tripUsecase *domain.TripUsecase
 	metrics     *observability.Metrics
-}
-
-type ContractChecker interface {
-	CheckService(ctx context.Context, companyID, serviceCode string) (contractclient.CheckResult, error)
 }
