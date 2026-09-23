@@ -77,6 +77,23 @@ make run
 make e2e
 ```
 
+## Kafka
+
+Запустите Kafka и Kafka UI и создайте topic `trip.events`:
+
+```bash
+docker compose -f deploy/docker-compose.yml up -d kafka kafka-ui
+docker compose -f deploy/docker-compose.yml exec kafka /opt/kafka/bin/kafka-topics.sh \
+  --bootstrap-server kafka:9092 --create --if-not-exists \
+  --topic trip.events --partitions 1 --replication-factor 1
+```
+
+Kafka доступна приложениям на хосте по адресу `localhost:29092`, а контейнерам —
+по адресу `kafka:9092`. Kafka UI: <http://localhost:8085>.
+Адреса брокеров для ShareTrip задаются через `KAFKA_BROKERS` (через запятую),
+по умолчанию — `localhost:29092`. События отправляются в `trip.events`.
+После удаления контейнера Kafka topic нужно создать заново указанной командой.
+
 ## Метрики
 
 После `make up` локальная инфраструктура мониторинга доступна по адресам:

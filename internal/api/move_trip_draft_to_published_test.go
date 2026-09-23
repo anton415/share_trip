@@ -2,7 +2,10 @@ package api_test
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -14,6 +17,7 @@ import (
 
 	"job4j.ru/share-trip/internal/api"
 	"job4j.ru/share-trip/internal/domain"
+	"job4j.ru/share-trip/internal/events"
 )
 
 func TestServer_MoveTripDraftToPublished(t *testing.T) {
@@ -80,6 +84,17 @@ func TestServer_MoveTripDraftToPublished(t *testing.T) {
 
 		fixture := newTestFixture()
 		created := createDraftTrip(t, fixture)
+		fixture.publisher.handle = func(ctx context.Context, event events.TripPublished) error {
+			var status string
+			err := testPool.QueryRow(ctx, `SELECT status FROM trips WHERE id = $1`, event.TripID).Scan(&status)
+			if err != nil {
+				return err
+			}
+			if status != string(domain.TripStatusPublished) {
+				return fmt.Errorf("trip must be committed before publishing event, got %s", status)
+			}
+			return nil
+		}
 
 		publishResp := sendMoveTripDraftToPublished(t, fixture.app, api.MoveTripDraftToPublishedRequest{
 			TripID: created.ID.String(),
@@ -87,6 +102,16 @@ func TestServer_MoveTripDraftToPublished(t *testing.T) {
 		defer closeResponseBody(t, publishResp.Body)
 
 		require.Equal(t, http.StatusOK, publishResp.StatusCode)
+		require.Len(t, fixture.publisher.events, 1)
+		event := fixture.publisher.events[0]
+		eventID, err := uuid.Parse(event.EventID)
+		require.NoError(t, err)
+		require.NotEqual(t, uuid.Nil, eventID)
+		require.Equal(t, "TripPublished", event.EventType)
+		require.Equal(t, created.ID.String(), event.TripID)
+		require.Equal(t, fixture.clientID.String(), event.DriverID)
+		require.Equal(t, fixture.clientID.String(), event.CompanyID)
+		require.False(t, event.OccurredAt.Before(created.CreatedAt))
 
 		publishRespBody, err := io.ReadAll(publishResp.Body)
 		require.NoError(t, err)
@@ -133,6 +158,7 @@ func TestServer_MoveTripDraftToPublished(t *testing.T) {
 		defer closeResponseBody(t, resp.Body)
 
 		require.Equal(t, http.StatusForbidden, resp.StatusCode)
+		require.Empty(t, fixture.publisher.events)
 		requireErrorResponse(t, resp, "FORBIDDEN", "forbidden")
 	})
 
@@ -146,6 +172,7 @@ func TestServer_MoveTripDraftToPublished(t *testing.T) {
 		defer closeResponseBody(t, resp.Body)
 
 		require.Equal(t, http.StatusNotFound, resp.StatusCode)
+		require.Empty(t, fixture.publisher.events)
 		requireErrorResponse(t, resp, "NOT_FOUND", "trip not found")
 	})
 
@@ -168,6 +195,7 @@ func TestServer_MoveTripDraftToPublished(t *testing.T) {
 		defer closeResponseBody(t, resp.Body)
 
 		require.Equal(t, http.StatusConflict, resp.StatusCode)
+		require.Empty(t, fixture.publisher.events)
 		requireErrorResponse(t, resp, "CONFLICT", "invalid trip status")
 	})
 
@@ -200,6 +228,29 @@ func TestServer_MoveTripDraftToPublished(t *testing.T) {
 		).Scan(&eventCount)
 		require.NoError(t, err)
 		require.Equal(t, 1, eventCount)
+		require.Len(t, fixture.publisher.events, 1)
+	})
+
+	t.Run("publisher error - поездка уже сохранена", func(t *testing.T) {
+		t.Parallel()
+
+		fixture := newTestFixture()
+		created := createDraftTrip(t, fixture)
+		fixture.publisher.handle = func(context.Context, events.TripPublished) error {
+			return errors.New("Kafka unavailable")
+		}
+
+		resp := sendMoveTripDraftToPublished(t, fixture.app, api.MoveTripDraftToPublishedRequest{
+			TripID: created.ID.String(),
+		})
+		defer closeResponseBody(t, resp.Body)
+
+		require.Equal(t, http.StatusInternalServerError, resp.StatusCode)
+		require.Len(t, fixture.publisher.events, 1)
+		var status string
+		err := testPool.QueryRow(testCtx, `SELECT status FROM trips WHERE id = $1`, created.ID).Scan(&status)
+		require.NoError(t, err)
+		require.Equal(t, string(domain.TripStatusPublished), status)
 	})
 }
 

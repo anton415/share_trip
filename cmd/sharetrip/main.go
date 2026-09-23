@@ -4,6 +4,7 @@ import (
 	"context"
 	"log"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
@@ -13,6 +14,7 @@ import (
 	"job4j.ru/share-trip/internal/config"
 	"job4j.ru/share-trip/internal/contractclient"
 	"job4j.ru/share-trip/internal/db"
+	"job4j.ru/share-trip/internal/events"
 	"job4j.ru/share-trip/internal/middleware"
 	"job4j.ru/share-trip/internal/observability"
 	metrics "job4j.ru/share-trip/internal/observability/metrics"
@@ -73,7 +75,16 @@ func main() {
 		time.Duration(max(1, config.EnvInt("CONTRACT_SERVICE_TIMEOUT_MS", 2000)))*time.Millisecond,
 		max(0, config.EnvInt("CONTRACT_SERVICE_RETRY_COUNT", 2)),
 	)
-	tripService := service.NewTripService(tripRepository, pool, appMetrics, contracts)
+	producer := events.NewProducer(
+		strings.Split(config.Env("KAFKA_BROKERS", "localhost:29092"), ","),
+		"trip.events",
+	)
+	defer func() {
+		if err := producer.Close(); err != nil {
+			logger.Error("close Kafka producer", "error", err)
+		}
+	}()
+	tripService := service.NewTripService(tripRepository, pool, appMetrics, contracts, producer)
 	server := api.NewServer(tripService, pool, registry)
 	app := fiber.New()
 	keycloakClientID := config.Env("KEYCLOAK_CLIENT_ID", "sharetrip-api")

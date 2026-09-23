@@ -1,0 +1,52 @@
+@startuml
+title Publish trip and create notification asynchronously
+
+actor Driver
+participant "ShareTrip API" as API
+participant "Trip Application Service" as TripService
+database "Trip DB" as TripDB
+queue "Kafka: trip.events" as Kafka
+participant "Notification Service" as Notification
+database "Notification DB" as NotificationDB
+
+Driver -> API: POST /trip/publish {tripId}
+API -> TripService: PublishTrip(ctx, PublishTripCommand)
+TripService -> TripDB: BEGIN; load trip FOR UPDATE
+TripDB --> TripService: Trip
+TripService -> TripService: Check DriverID = ClientID and status = draft
+TripService -> TripDB: Save published + history + outbox_event
+TripService -> TripDB: COMMIT
+TripDB --> TripService: committed
+
+TripService -> Kafka: PublishTripPublished(key=trip_id)
+note over TripService, Kafka
+  event_id, event_type=TripPublished, trip_id,
+  driver_id=ClientID, company_id=ClientID, occurred_at
+end note
+Kafka --> TripService: ack (RequiredAcks=all)
+
+par HTTP response
+  TripService --> API: tripId
+  API --> Driver: 200 {tripId}
+else Independent notification processing
+  Notification -> Kafka: FetchMessage(group=notification-service)
+  Kafka --> Notification: TripPublished
+  Notification -> Notification: HandleTripPublished(ctx, event)
+  Notification -> NotificationDB: BEGIN
+  Notification -> NotificationDB: INSERT processed_events(event_id)\nON CONFLICT DO NOTHING
+  alt new event_id
+    NotificationDB --> Notification: inserted
+    Notification -> NotificationDB: INSERT notification\nrecipient_id=driver_id, type=trip_published\nstatus=created, payload=event
+  else event_id already processed
+    NotificationDB --> Notification: duplicate; skip notification
+  end
+  Notification -> NotificationDB: COMMIT
+  NotificationDB --> Notification: committed
+  Notification -> Kafka: CommitMessages(offset)
+end
+
+note over Notification, NotificationDB
+  On a database error: ROLLBACK and no offset commit.
+  Kafka can deliver an uncommitted event again after restart.
+end note
+@enduml
