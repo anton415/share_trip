@@ -3,19 +3,11 @@ package events
 import (
 	"context"
 	"encoding/json"
-	"time"
 
 	"github.com/segmentio/kafka-go"
-)
 
-type TripPublished struct {
-	EventID    string    `json:"event_id"`
-	EventType  string    `json:"event_type"`
-	TripID     string    `json:"trip_id"`
-	DriverID   string    `json:"driver_id"`
-	CompanyID  string    `json:"company_id"`
-	OccurredAt time.Time `json:"occurred_at"`
-}
+	"job4j.ru/share-trip/internal/domain"
+)
 
 type Producer struct {
 	writer *kafka.Writer
@@ -32,7 +24,7 @@ func NewProducer(brokers []string, topic string) *Producer {
 	}
 }
 
-func (p *Producer) PublishTripPublished(ctx context.Context, event TripPublished) error {
+func (p *Producer) PublishTripPublished(ctx context.Context, event domain.TripPublished) error {
 	data, err := json.Marshal(event)
 	if err != nil {
 		return err

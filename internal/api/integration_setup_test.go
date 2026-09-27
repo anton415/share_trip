@@ -19,7 +19,6 @@ import (
 	"github.com/testcontainers/testcontainers-go/modules/postgres"
 
 	"job4j.ru/share-trip/internal/api"
-	"job4j.ru/share-trip/internal/events"
 	"job4j.ru/share-trip/internal/middleware"
 	observability "job4j.ru/share-trip/internal/observability/metrics"
 	"job4j.ru/share-trip/internal/repository"
@@ -107,23 +106,9 @@ func setupIntegration() error {
 }
 
 type testFixture struct {
-	app       *fiber.App
-	clientID  uuid.UUID
-	metrics   *observability.Metrics
-	publisher *tripPublisherStub
-}
-
-type tripPublisherStub struct {
-	events []events.TripPublished
-	handle func(context.Context, events.TripPublished) error
-}
-
-func (p *tripPublisherStub) PublishTripPublished(ctx context.Context, event events.TripPublished) error {
-	p.events = append(p.events, event)
-	if p.handle != nil {
-		return p.handle(ctx, event)
-	}
-	return nil
+	app      *fiber.App
+	clientID uuid.UUID
+	metrics  *observability.Metrics
 }
 
 func newTestFixture() testFixture {
@@ -135,8 +120,7 @@ func newTestFixtureWithContracts(contracts service.ContractChecker) testFixture 
 	appMetrics := observability.New(registry)
 
 	tripRepository := repo.NewPostgresTripRepository(testPool, appMetrics)
-	publisher := &tripPublisherStub{}
-	tripService := service.NewTripService(tripRepository, testPool, appMetrics, contracts, publisher)
+	tripService := service.NewTripService(tripRepository, testPool, appMetrics, contracts)
 
 	server := api.NewServer(tripService, testPool, registry)
 	clientID := uuid.New()
@@ -163,10 +147,9 @@ func newTestFixtureWithContracts(contracts service.ContractChecker) testFixture 
 	server.RegisterRoutes(app, passThrough, testKeycloakClientID)
 
 	return testFixture{
-		app:       app,
-		clientID:  clientID,
-		metrics:   appMetrics,
-		publisher: publisher,
+		app:      app,
+		clientID: clientID,
+		metrics:  appMetrics,
 	}
 }
 

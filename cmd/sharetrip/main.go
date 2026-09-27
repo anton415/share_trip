@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"log"
 	"os"
 	"strings"
@@ -75,16 +76,7 @@ func main() {
 		time.Duration(max(1, config.EnvInt("CONTRACT_SERVICE_TIMEOUT_MS", 2000)))*time.Millisecond,
 		max(0, config.EnvInt("CONTRACT_SERVICE_RETRY_COUNT", 2)),
 	)
-	producer := events.NewProducer(
-		strings.Split(config.Env("KAFKA_BROKERS", "localhost:29092"), ","),
-		"trip.events",
-	)
-	defer func() {
-		if err := producer.Close(); err != nil {
-			logger.Error("close Kafka producer", "error", err)
-		}
-	}()
-	tripService := service.NewTripService(tripRepository, pool, appMetrics, contracts, producer)
+	tripService := service.NewTripService(tripRepository, pool, appMetrics, contracts)
 	server := api.NewServer(tripService, pool, registry)
 	app := fiber.New()
 	keycloakClientID := config.Env("KEYCLOAK_CLIENT_ID", "sharetrip-api")
@@ -104,6 +96,29 @@ func main() {
 	app.Use(middleware.Correlation(logger))
 	app.Use(middleware.NewHTTPMetricsMiddleware(appMetrics))
 	server.RegisterRoutes(app, keycloakAuth, keycloakClientID)
+
+	producer := events.NewProducer(
+		strings.Split(config.Env("KAFKA_BROKERS", "localhost:29092"), ","),
+		"trip.events",
+	)
+	defer func() {
+		if err := producer.Close(); err != nil {
+			logger.Error("close Kafka producer", "error", err)
+		}
+	}()
+	publisher := events.NewOutboxPublisher(pool, tripRepository, producer, logger)
+	publisherCtx, stopPublisher := context.WithCancel(ctx)
+	publisherDone := make(chan struct{})
+	go func() {
+		defer close(publisherDone)
+		if err := publisher.Run(publisherCtx); err != nil && !errors.Is(err, context.Canceled) {
+			logger.Error("outbox publisher stopped", "error", err)
+		}
+	}()
+	defer func() {
+		stopPublisher()
+		<-publisherDone
+	}()
 
 	addr := config.Env("HTTP_ADDR", ":8080")
 

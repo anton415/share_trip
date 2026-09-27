@@ -24,7 +24,7 @@ func (r *PostgresTripRepository) CreateOutboxEvent(
 
 	span.SetAttributes(
 		attribute.String("trip_id", event.AggregateID.String()),
-		attribute.String("event_name", event.EventName),
+		attribute.String("event_type", event.EventType),
 	)
 
 	started := time.Now()
@@ -38,15 +38,19 @@ func (r *PostgresTripRepository) CreateOutboxEvent(
 	}()
 
 	_, err := tx.Exec(ctx, `
-		INSERT INTO outbox_event (
-			event_name,
+		INSERT INTO outbox_events (
+			id,
+			aggregate_type,
 			aggregate_id,
+			event_type,
 			payload
 		)
-		VALUES ($1, $2, $3)
+		VALUES ($1, $2, $3, $4, $5)
 	`,
-		event.EventName,
+		event.ID,
+		event.AggregateType,
 		event.AggregateID,
+		event.EventType,
 		event.Payload,
 	)
 	if err != nil {

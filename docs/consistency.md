@@ -2,15 +2,34 @@
 
 ## Двойная запись
 
-ShareTrip сохраняет поездку в своей БД, затем отправляет событие в Kafka.
+Без outbox ShareTrip сохраняет поездку в своей БД, затем отправляет событие в Kafka.
 Это две отдельные записи: транзакция PostgreSQL не охватывает Kafka.
 
 Например, поездка уже получила статус `published`, но перед отправкой события
 сервис упал. Поездка опубликована, а Notification Service о ней не узнал.
 
-Сейчас ShareTrip уже сохраняет запись в `outbox_event` вместе с поездкой,
-но отправляет событие в Kafka отдельным вызовом после commit.
-Отправителя записей из outbox пока нет, поэтому после сбоя доставка не возобновится сама.
+```plantuml
+@startuml
+title Потеря события без outbox
+participant ShareTrip
+database "Trip DB" as TripDB
+queue Kafka
+participant "Notification Service" as Notification
+
+ShareTrip -> TripDB: UPDATE trips SET status='published'
+TripDB --> ShareTrip: committed
+ShareTrip -> Kafka: publish TripPublished
+Kafka --> ShareTrip: error / timeout
+note right of ShareTrip
+  Поездка опубликована,
+  но события в Kafka нет.
+end note
+Kafka -[#red]-> Notification: нет сообщения
+@enduml
+```
+
+Теперь `PublishTrip` сохраняет поездку и полный `TripPublished` в `outbox_events`
+в одной транзакции. `OutboxPublisher` отправляет события отдельно от пользовательского запроса.
 
 ## Чтение, запись и retry
 
@@ -28,29 +47,29 @@ Retry — повтор после ошибки — помогает при вр�
 
 Outbox находится в БД ShareTrip. Поездка и событие сохраняются в одной
 транзакции: либо обе записи успешны, либо обе откатываются.
-Отдельный отправитель передаёт событие в Kafka и после подтверждения отмечает его отправленным.
+Publisher работает в отдельной goroutine: раз в секунду выбирает до 100 событий
+`pending` по `created_at` с `FOR UPDATE SKIP LOCKED` и отправляет их в `trip.events`.
+Выборка и запись результатов отправки выполняются в одной транзакции.
 
-Если Kafka недоступна, событие остаётся для следующей попытки.
-Сбой после отправки, но до отметки в БД может привести к повторной доставке.
-Поэтому при повторах сохраняется тот же `event_id`.
+После подтверждения Kafka publisher устанавливает `sent` и `sent_at`.
+При ошибке отправки увеличивает `attempts`, сохраняет `last_error` и оставляет `pending`.
+Ошибка записи результата в БД откатывает транзакцию пачки.
+Сбой после отправки, но до commit может привести к повторной доставке.
+При повторах сохраняется тот же `event_id`, равный `outbox_events.id`.
+
+Миграция сохраняет старые записи `trip_published` как `failed` с причиной в `last_error`.
+Их прежний Kafka `event_id` и результат доставки неизвестны, поэтому автоматически они не отправляются.
 
 ```plantuml
 @startuml
-title Outbox
-participant ShareTrip
+title Transactional outbox
+participant "PublishTrip use case" as UseCase
 database "Trip DB" as DB
-participant "Отправитель outbox" as Publisher
-queue Kafka
 
-ShareTrip -> DB: BEGIN
-ShareTrip -> DB: Сохранить поездку: published
-ShareTrip -> DB: Сохранить TripPublished в outbox
-ShareTrip -> DB: COMMIT
-Publisher -> DB: Прочитать неотправленное событие
-DB --> Publisher: TripPublished(event_id)
-Publisher -> Kafka: TripPublished(event_id)
-Kafka --> Publisher: Подтверждение
-Publisher -> DB: Отметить событие отправленным
+UseCase -> DB: BEGIN
+UseCase -> DB: UPDATE trips SET status='published'
+UseCase -> DB: INSERT outbox_events (TripPublished)
+UseCase -> DB: COMMIT
 @enduml
 ```
 
@@ -67,14 +86,14 @@ Offset — позиция обработки сообщения в Kafka — п�
 
 ```plantuml
 @startuml
-title Inbox
-queue Kafka
-participant "Notification Service" as Notification
+title Inbox transaction
+queue "Kafka: trip.events" as Kafka
+participant "Notification Consumer" as Notification
 database "Notification DB" as DB
 
 Kafka -> Notification: TripPublished(event_id)
 Notification -> DB: BEGIN
-Notification -> DB: Зарегистрировать уникальный event_id
+Notification -> DB: INSERT processed_events(event_id)\nON CONFLICT DO NOTHING
 alt Новое событие
   Notification -> DB: Создать уведомление
 else event_id уже обработан
@@ -98,33 +117,12 @@ Saga связывает шаги в разных сервисах в один б
 достаточно повторить доставку. Outbox и inbox обеспечивают передачу событий,
 а saga определяет шаги процесса и компенсации.
 
-## Общий процесс TripPublished -> NotificationCreated
+## Полный процесс ShareTrip -> outbox -> Kafka -> inbox -> Notification
 
 `NotificationCreated` здесь означает сохранённое уведомление со статусом `created`.
 Отдельное событие с таким именем сейчас в Kafka не отправляется.
 
-```plantuml
-@startuml
-title TripPublished -> NotificationCreated
-participant ShareTrip
-database "Trip DB" as TripDB
-participant "Отправитель outbox" as Publisher
-queue Kafka
-participant "Notification Service" as Notification
-database "Notification DB" as NotificationDB
-
-ShareTrip -> TripDB: Поездка published + событие в outbox\nв одной транзакции
-Publisher -> TripDB: Прочитать событие
-TripDB --> Publisher: TripPublished(event_id)
-Publisher -> Kafka: TripPublished(event_id)
-Kafka --> Publisher: Подтверждение
-Publisher -> TripDB: Отметить отправленным
-Kafka -> Notification: TripPublished(event_id)
-Notification -> NotificationDB: Сохранить event_id + уведомление\nв одной транзакции; дубль пропустить
-NotificationDB --> Notification: NotificationCreated / уже обработано
-Notification -> Kafka: Подтвердить offset
-@enduml
-```
+[Полная PlantUML-диаграмма процесса](publish_trip.puml).
 
 Уведомление может появиться с задержкой. После восстановления сервисов
 и успешных повторов оно будет создано без дублей для того же `event_id`.

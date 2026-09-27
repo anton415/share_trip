@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -72,19 +73,26 @@ func (u *TripUsecase) PublishTrip(
 		return nil, fmt.Errorf("tripRepo.Update: %w", err)
 	}
 
-	payload, err := json.Marshal(struct {
-		TripID uuid.UUID `json:"trip_id"`
-	}{
-		TripID: updatedTrip.ID,
-	})
+	eventID := uuid.New()
+	event := TripPublished{
+		EventID:    eventID.String(),
+		EventType:  "TripPublished",
+		TripID:     updatedTrip.ID.String(),
+		DriverID:   updatedTrip.DriverID.String(),
+		CompanyID:  req.ClientID.String(),
+		OccurredAt: time.Now().UTC(),
+	}
+	payload, err := json.Marshal(event)
 	if err != nil {
 		return nil, fmt.Errorf("marshal trip published payload: %w", err)
 	}
 
 	err = u.tripRepo.CreateOutboxEvent(ctx, tx, OutboxEvent{
-		EventName:   "trip_published",
-		AggregateID: updatedTrip.ID,
-		Payload:     payload,
+		ID:            eventID,
+		AggregateType: "trip",
+		AggregateID:   updatedTrip.ID,
+		EventType:     event.EventType,
+		Payload:       payload,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("tripRepo.CreateOutboxEvent: %w", err)

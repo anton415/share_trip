@@ -4,8 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
-	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -13,11 +11,13 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/stretchr/testify/require"
 
 	"job4j.ru/share-trip/internal/api"
 	"job4j.ru/share-trip/internal/domain"
-	"job4j.ru/share-trip/internal/events"
+	repo "job4j.ru/share-trip/internal/repository"
+	"job4j.ru/share-trip/internal/service"
 )
 
 func TestServer_MoveTripDraftToPublished(t *testing.T) {
@@ -84,17 +84,6 @@ func TestServer_MoveTripDraftToPublished(t *testing.T) {
 
 		fixture := newTestFixture()
 		created := createDraftTrip(t, fixture)
-		fixture.publisher.handle = func(ctx context.Context, event events.TripPublished) error {
-			var status string
-			err := testPool.QueryRow(ctx, `SELECT status FROM trips WHERE id = $1`, event.TripID).Scan(&status)
-			if err != nil {
-				return err
-			}
-			if status != string(domain.TripStatusPublished) {
-				return fmt.Errorf("trip must be committed before publishing event, got %s", status)
-			}
-			return nil
-		}
 
 		publishResp := sendMoveTripDraftToPublished(t, fixture.app, api.MoveTripDraftToPublishedRequest{
 			TripID: created.ID.String(),
@@ -102,11 +91,26 @@ func TestServer_MoveTripDraftToPublished(t *testing.T) {
 		defer closeResponseBody(t, publishResp.Body)
 
 		require.Equal(t, http.StatusOK, publishResp.StatusCode)
-		require.Len(t, fixture.publisher.events, 1)
-		event := fixture.publisher.events[0]
+		var outbox domain.OutboxEvent
+		err := testPool.QueryRow(testCtx, `
+			SELECT id, aggregate_type, aggregate_id, event_type, payload, status
+			FROM outbox_events WHERE aggregate_id = $1
+		`, created.ID).Scan(
+			&outbox.ID, &outbox.AggregateType, &outbox.AggregateID,
+			&outbox.EventType, &outbox.Payload, &outbox.Status,
+		)
+		require.NoError(t, err)
+		require.Equal(t, "trip", outbox.AggregateType)
+		require.Equal(t, created.ID, outbox.AggregateID)
+		require.Equal(t, "TripPublished", outbox.EventType)
+		require.Equal(t, "pending", outbox.Status)
+
+		var event domain.TripPublished
+		require.NoError(t, json.Unmarshal(outbox.Payload, &event))
 		eventID, err := uuid.Parse(event.EventID)
 		require.NoError(t, err)
 		require.NotEqual(t, uuid.Nil, eventID)
+		require.Equal(t, outbox.ID, eventID)
 		require.Equal(t, "TripPublished", event.EventType)
 		require.Equal(t, created.ID.String(), event.TripID)
 		require.Equal(t, fixture.clientID.String(), event.DriverID)
@@ -158,7 +162,6 @@ func TestServer_MoveTripDraftToPublished(t *testing.T) {
 		defer closeResponseBody(t, resp.Body)
 
 		require.Equal(t, http.StatusForbidden, resp.StatusCode)
-		require.Empty(t, fixture.publisher.events)
 		requireErrorResponse(t, resp, "FORBIDDEN", "forbidden")
 	})
 
@@ -172,7 +175,6 @@ func TestServer_MoveTripDraftToPublished(t *testing.T) {
 		defer closeResponseBody(t, resp.Body)
 
 		require.Equal(t, http.StatusNotFound, resp.StatusCode)
-		require.Empty(t, fixture.publisher.events)
 		requireErrorResponse(t, resp, "NOT_FOUND", "trip not found")
 	})
 
@@ -195,7 +197,6 @@ func TestServer_MoveTripDraftToPublished(t *testing.T) {
 		defer closeResponseBody(t, resp.Body)
 
 		require.Equal(t, http.StatusConflict, resp.StatusCode)
-		require.Empty(t, fixture.publisher.events)
 		requireErrorResponse(t, resp, "CONFLICT", "invalid trip status")
 	})
 
@@ -211,6 +212,10 @@ func TestServer_MoveTripDraftToPublished(t *testing.T) {
 		firstResp := sendMoveTripDraftToPublished(t, fixture.app, payload)
 		require.Equal(t, http.StatusOK, firstResp.StatusCode)
 		require.NoError(t, firstResp.Body.Close())
+		var firstEventID uuid.UUID
+		err := testPool.QueryRow(testCtx, `SELECT id FROM outbox_events WHERE aggregate_id = $1`, created.ID).
+			Scan(&firstEventID)
+		require.NoError(t, err)
 
 		secondResp := sendMoveTripDraftToPublished(t, fixture.app, payload)
 		defer closeResponseBody(t, secondResp.Body)
@@ -220,38 +225,55 @@ func TestServer_MoveTripDraftToPublished(t *testing.T) {
 		require.NoError(t, err)
 		require.Empty(t, body)
 
-		var eventCount int
+		var eventCount, sameEventCount int
 		err = testPool.QueryRow(
 			testCtx,
-			`SELECT COUNT(*) FROM outbox_event WHERE aggregate_id = $1 AND event_name = 'trip_published'`,
+			`SELECT COUNT(*), COUNT(*) FILTER (WHERE id = $2)
+			 FROM outbox_events WHERE aggregate_id = $1 AND event_type = 'TripPublished'`,
 			created.ID,
-		).Scan(&eventCount)
+			firstEventID,
+		).Scan(&eventCount, &sameEventCount)
 		require.NoError(t, err)
 		require.Equal(t, 1, eventCount)
-		require.Len(t, fixture.publisher.events, 1)
+		require.Equal(t, 1, sameEventCount)
 	})
 
-	t.Run("publisher error - поездка уже сохранена", func(t *testing.T) {
+	t.Run("outbox error - публикация поездки откатывается", func(t *testing.T) {
 		t.Parallel()
 
 		fixture := newTestFixture()
 		created := createDraftTrip(t, fixture)
-		fixture.publisher.handle = func(context.Context, events.TripPublished) error {
-			return errors.New("Kafka unavailable")
+		tripRepository := outboxFailureRepository{
+			TripRepository: repo.NewPostgresTripRepository(testPool, fixture.metrics),
 		}
-
-		resp := sendMoveTripDraftToPublished(t, fixture.app, api.MoveTripDraftToPublishedRequest{
-			TripID: created.ID.String(),
+		tripService := service.NewTripService(tripRepository, testPool, fixture.metrics, nil)
+		tripID, err := tripService.PublishTrip(testCtx, service.PublishTripCommand{
+			TripID:   created.ID,
+			ClientID: fixture.clientID,
 		})
-		defer closeResponseBody(t, resp.Body)
+		require.ErrorContains(t, err, "insert outbox event")
+		require.Equal(t, uuid.Nil, tripID)
 
-		require.Equal(t, http.StatusInternalServerError, resp.StatusCode)
-		require.Len(t, fixture.publisher.events, 1)
 		var status string
-		err := testPool.QueryRow(testCtx, `SELECT status FROM trips WHERE id = $1`, created.ID).Scan(&status)
+		err = testPool.QueryRow(testCtx, `SELECT status FROM trips WHERE id = $1`, created.ID).Scan(&status)
 		require.NoError(t, err)
-		require.Equal(t, string(domain.TripStatusPublished), status)
+		require.Equal(t, string(domain.TripStatusDraft), status)
+
+		var eventCount int
+		err = testPool.QueryRow(testCtx, `SELECT COUNT(*) FROM outbox_events WHERE aggregate_id = $1`, created.ID).
+			Scan(&eventCount)
+		require.NoError(t, err)
+		require.Zero(t, eventCount)
 	})
+}
+
+type outboxFailureRepository struct {
+	service.TripRepository
+}
+
+func (r outboxFailureRepository) CreateOutboxEvent(ctx context.Context, tx pgx.Tx, event domain.OutboxEvent) error {
+	event.Payload = json.RawMessage(`{`)
+	return r.TripRepository.CreateOutboxEvent(ctx, tx, event)
 }
 
 func sendMoveTripDraftToPublished(
