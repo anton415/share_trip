@@ -32,23 +32,32 @@ ShareTrip — серверный сервис для управления сов
 
 ## Конфигурация
 
-Локальные значения по умолчанию соответствуют сервису PostgreSQL из `deploy/docker-compose.yml`. Доступные переменные окружения описаны в `configs/local.env.example`:
+Сервис читает переменные окружения через `config.Load()` до подключения к зависимостям.
 
-```text
-DB_HOST
-DB_PORT
-DB_USER
-DB_PASSWORD
-DB_NAME
-DB_SSLMODE
-DATABASE_URL
-HTTP_ADDR
-KEYCLOAK_ISSUER
-KEYCLOAK_CLIENT_ID
-KEYCLOAK_CLIENT_SECRET
-```
+| Переменная | Обязательная | Значение по умолчанию / назначение |
+| --- | --- | --- |
+| `HTTP_ADDR` | Нет | `:8080` |
+| `DB_HOST` | Да | Адрес PostgreSQL |
+| `DB_PORT` | Нет | `6544`; целое число от 1 до 65535 |
+| `DB_USER` | Да | Пользователь PostgreSQL |
+| `DB_PASSWORD` | Да | Пароль PostgreSQL; секрет |
+| `DB_NAME` | Да | Имя базы данных |
+| `DB_SSLMODE` | Нет | `disable` |
+| `CONTRACT_SERVICE_BASE_URL` | Да | Адрес Contract Service |
+| `CONTRACT_SERVICE_TIMEOUT_MS` | Нет | `2000`; положительное целое число миллисекунд, помещающееся в `time.Duration` |
+| `CONTRACT_SERVICE_RETRY_COUNT` | Нет | `2`; целое число не меньше нуля |
+| `KAFKA_BROKERS` | Да | Адреса Kafka-брокеров через запятую |
+| `TRIP_EVENTS_TOPIC` | Нет | `trip.events` |
+| `KEYCLOAK_ISSUER` | Да | URL realm в Keycloak |
+| `KEYCLOAK_CLIENT_ID` | Нет | `sharetrip-api` |
+| `KEYCLOAK_CLIENT_SECRET` | Да | Секрет клиента Keycloak |
 
-Если нужны значения, отличные от настроек по умолчанию, экспортируйте эти переменные перед запуском приложения. `KEYCLOAK_CLIENT_SECRET` обязателен: укажите фактический secret из `Clients → sharetrip-api → Credentials`.
+При отсутствии обязательной переменной или неверном числовом значении сервис
+завершается с ошибкой. Секреты и строка подключения с паролем не выводятся в
+сообщениях об ошибках инициализации БД.
+
+`DATABASE_URL` используется командами миграций. Приложение собирает строку
+подключения из `DB_*`.
 
 ## Локальный запуск
 
@@ -65,9 +74,19 @@ make up
 make migrate-up
 ```
 
-Запустите сервис:
+Задайте обязательные переменные для локального окружения из Docker Compose.
+Замените `<keycloak-client-secret>` значением из `Clients → sharetrip-api → Credentials`.
+Contract Service в этом примере должен быть доступен на порту `8082`.
 
 ```bash
+export DB_HOST=localhost
+export DB_USER=postgres
+export DB_PASSWORD=password
+export DB_NAME=sharetrip
+export CONTRACT_SERVICE_BASE_URL=http://localhost:8082
+export KAFKA_BROKERS=localhost:29092
+export KEYCLOAK_ISSUER=http://localhost:8087/realms/sharetrip
+export KEYCLOAK_CLIENT_SECRET='<keycloak-client-secret>'
 make run
 ```
 
@@ -90,9 +109,36 @@ docker compose -f deploy/docker-compose.yml exec kafka /opt/kafka/bin/kafka-topi
 
 Kafka доступна приложениям на хосте по адресу `localhost:29092`, а контейнерам —
 по адресу `kafka:9092`. Kafka UI: <http://localhost:8085>.
-Адреса брокеров для ShareTrip задаются через `KAFKA_BROKERS` (через запятую),
-по умолчанию — `localhost:29092`. События отправляются в `trip.events`.
+Адреса брокеров для ShareTrip обязательно задаются через `KAFKA_BROKERS`
+(через запятую). Topic задаётся через `TRIP_EVENTS_TOPIC`, по умолчанию — `trip.events`.
 После удаления контейнера Kafka topic нужно создать заново указанной командой.
+
+## Kubernetes: конфигурация и секреты
+
+Манифесты трёх сервисов находятся в [k8s/](k8s/). Каждый Deployment получает
+настройки через `envFrom` из своей пары ConfigMap и Secret:
+
+| Deployment | ConfigMap | Secret |
+| --- | --- | --- |
+| `sharetrip` | `sharetrip-config` | `sharetrip-secret` |
+| `contract` | `contract-config` | `contract-secret` |
+| `notification` | `notification-config` | `notification-secret` |
+
+Связи показаны в [PlantUML-диаграмме](docs/configuration_secrets.puml).
+
+Перед применением манифестов должен существовать namespace `sharetrip`, быть
+доступны образы `sharetrip/<service>:local` и зависимости по адресам из ConfigMap и Secret.
+В частности, `contract-service` должен разрешаться в адрес Contract Service.
+В `sharetrip-config.yaml` заполните `KEYCLOAK_ISSUER`. Secret создавайте с рабочими
+значениями по шаблонам `*-secret.example.yaml`; файлы с заполненными секретами
+храните вне репозитория.
+
+После изменения ConfigMap или Secret перезапустите соответствующий Deployment,
+чтобы новые Pod-ы получили переменные окружения. Например:
+
+```bash
+kubectl rollout restart deployment/sharetrip -n sharetrip
+```
 
 ## Метрики
 

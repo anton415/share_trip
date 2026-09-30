@@ -1,0 +1,23 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sharetrip
+  namespace: sharetrip
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: sharetrip
+  template:
+    metadata:
+      labels:
+        app: sharetrip
+    spec:
+      containers:
+        - name: sharetrip
+          image: sharetrip/sharetrip:local
+          envFrom:
+            - configMapRef:
+                name: sharetrip-config
+            - secretRef:
+                name: sharetrip-secret

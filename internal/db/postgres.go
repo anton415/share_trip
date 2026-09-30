@@ -8,8 +8,6 @@ import (
 	"strconv"
 	"time"
 
-	"job4j.ru/share-trip/internal/config"
-
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -20,17 +18,6 @@ type Config struct {
 	Password string
 	Name     string
 	SSLMode  string
-}
-
-func FromEnv() Config {
-	return Config{
-		Host:     config.Env("DB_HOST", "localhost"),
-		Port:     config.EnvInt("DB_PORT", 6544),
-		User:     config.Env("DB_USER", "postgres"),
-		Password: config.Env("DB_PASSWORD", "password"),
-		Name:     config.Env("DB_NAME", "sharetrip"),
-		SSLMode:  config.Env("DB_SSLMODE", "disable"),
-	}
 }
 
 func (c Config) DSN() string {
@@ -56,7 +43,7 @@ func (c Config) DSN() string {
 func NewPool(ctx context.Context, dsn string) (*pgxpool.Pool, error) {
 	cfg, err := pgxpool.ParseConfig(dsn)
 	if err != nil {
-		return nil, fmt.Errorf("parse postgres config: %w", err)
+		return nil, fmt.Errorf("invalid PostgreSQL configuration")
 	}
 
 	cfg.MaxConns = 10
@@ -66,7 +53,7 @@ func NewPool(ctx context.Context, dsn string) (*pgxpool.Pool, error) {
 
 	pool, err := pgxpool.NewWithConfig(ctx, cfg)
 	if err != nil {
-		return nil, fmt.Errorf("create postgres pool: %w", err)
+		return nil, fmt.Errorf("create PostgreSQL pool failed")
 	}
 
 	pingCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
@@ -74,7 +61,7 @@ func NewPool(ctx context.Context, dsn string) (*pgxpool.Pool, error) {
 
 	if err := pool.Ping(pingCtx); err != nil {
 		pool.Close()
-		return nil, fmt.Errorf("ping postgres: %w", err)
+		return nil, fmt.Errorf("ping PostgreSQL failed")
 	}
 
 	return pool, nil

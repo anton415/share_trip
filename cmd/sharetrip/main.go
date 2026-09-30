@@ -25,6 +25,11 @@ import (
 )
 
 func main() {
+	cfg, err := config.Load()
+	if err != nil {
+		log.Fatal(err)
+	}
+
 	logger, logFile, err := observability.NewLogger()
 	if err != nil {
 		log.Fatal(err)
@@ -60,7 +65,7 @@ func main() {
 		}
 	}()
 
-	pool, err := db.NewPool(ctx, db.FromEnv().DSN())
+	pool, err := db.NewPool(ctx, cfg.Database.DSN())
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -72,34 +77,28 @@ func main() {
 	appMetrics := metrics.New(registry)
 	tripRepository := repo.NewPostgresTripRepository(pool, appMetrics)
 	contracts := contractclient.New(
-		config.Env("CONTRACT_SERVICE_BASE_URL", "http://localhost:8082"),
-		time.Duration(max(1, config.EnvInt("CONTRACT_SERVICE_TIMEOUT_MS", 2000)))*time.Millisecond,
-		max(0, config.EnvInt("CONTRACT_SERVICE_RETRY_COUNT", 2)),
+		cfg.ContractServiceURL,
+		cfg.RequestTimeout,
+		cfg.RetryAttempts,
 	)
 	tripService := service.NewTripService(tripRepository, pool, appMetrics, contracts)
 	server := api.NewServer(tripService, pool, registry)
 	app := fiber.New()
-	keycloakClientID := config.Env("KEYCLOAK_CLIENT_ID", "sharetrip-api")
-	keycloakClientSecret := config.Env("KEYCLOAK_CLIENT_SECRET", "")
-	if keycloakClientSecret == "" {
-		logger.Error("KEYCLOAK_CLIENT_SECRET is required")
-		os.Exit(1)
-	}
 	keycloakAuth := middleware.KeycloakRefreshTokenMiddleware(
 		middleware.KeycloakConfig{
-			Issuer:       config.Env("KEYCLOAK_ISSUER", "http://localhost:8087/realms/sharetrip"),
-			ClientID:     keycloakClientID,
-			ClientSecret: keycloakClientSecret,
+			Issuer:       cfg.KeycloakIssuer,
+			ClientID:     cfg.KeycloakClientID,
+			ClientSecret: cfg.KeycloakClientSecret,
 		},
 	)
 	app.Use(tracing.NewFiberMiddleware())
 	app.Use(middleware.Correlation(logger))
 	app.Use(middleware.NewHTTPMetricsMiddleware(appMetrics))
-	server.RegisterRoutes(app, keycloakAuth, keycloakClientID)
+	server.RegisterRoutes(app, keycloakAuth, cfg.KeycloakClientID)
 
 	producer := events.NewProducer(
-		strings.Split(config.Env("KAFKA_BROKERS", "localhost:29092"), ","),
-		"trip.events",
+		strings.Split(cfg.KafkaBrokers, ","),
+		cfg.TripEventsTopic,
 	)
 	defer func() {
 		if err := producer.Close(); err != nil {
@@ -120,7 +119,7 @@ func main() {
 		<-publisherDone
 	}()
 
-	addr := config.Env("HTTP_ADDR", ":8080")
+	addr := cfg.HTTPAddr
 
 	logger.Info("listening", "address", addr)
 	if err := app.Listen(addr); err != nil {
