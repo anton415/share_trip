@@ -31,13 +31,13 @@ func TestLoadDefaultsAndOverrides(t *testing.T) {
 		cfg.TripEventsTopic != "trip.events" || cfg.KeycloakClientID != "sharetrip-api" {
 		t.Fatal("unexpected defaults")
 	}
-	for key, value := range map[string]string{
-		"HTTP_ADDR": ":8085", "DB_PORT": "5432", "DB_SSLMODE": "require",
-		"CONTRACT_SERVICE_TIMEOUT_MS": "1500", "CONTRACT_SERVICE_RETRY_COUNT": "0",
-		"TRIP_EVENTS_TOPIC": "custom-events", "KEYCLOAK_CLIENT_ID": "custom-client",
-	} {
-		t.Setenv(key, value)
-	}
+	t.Setenv("HTTP_ADDR", ":8085")
+	t.Setenv("DB_PORT", "5432")
+	t.Setenv("DB_SSLMODE", "require")
+	t.Setenv("CONTRACT_SERVICE_TIMEOUT_MS", "1500")
+	t.Setenv("CONTRACT_SERVICE_RETRY_COUNT", "0")
+	t.Setenv("TRIP_EVENTS_TOPIC", "custom-events")
+	t.Setenv("KEYCLOAK_CLIENT_ID", "custom-client")
 	cfg, err = Load()
 	if err != nil {
 		t.Fatal(err)
