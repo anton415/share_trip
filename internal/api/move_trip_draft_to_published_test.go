@@ -238,12 +238,12 @@ func TestServer_MoveTripDraftToPublished(t *testing.T) {
 		require.Equal(t, 1, sameEventCount)
 	})
 
-	t.Run("outbox error - публикация поездки откатывается", func(t *testing.T) {
+	t.Run("outbox error - повтор после отката сохраняет ключ события", func(t *testing.T) {
 		t.Parallel()
 
 		fixture := newTestFixture()
 		created := createDraftTrip(t, fixture)
-		tripRepository := outboxFailureRepository{
+		tripRepository := &outboxFailureRepository{
 			TripRepository: repo.NewPostgresTripRepository(testPool, fixture.metrics),
 		}
 		tripService := service.NewTripService(tripRepository, testPool, fixture.metrics, nil)
@@ -264,14 +264,31 @@ func TestServer_MoveTripDraftToPublished(t *testing.T) {
 			Scan(&eventCount)
 		require.NoError(t, err)
 		require.Zero(t, eventCount)
+
+		resp := sendMoveTripDraftToPublished(t, fixture.app, api.MoveTripDraftToPublishedRequest{
+			TripID: created.ID.String(),
+		})
+		defer closeResponseBody(t, resp.Body)
+		require.Equal(t, http.StatusOK, resp.StatusCode)
+
+		var outboxID uuid.UUID
+		var payloadEventID string
+		err = testPool.QueryRow(testCtx, `
+			SELECT id, payload->>'event_id' FROM outbox_events WHERE aggregate_id = $1
+		`, created.ID).Scan(&outboxID, &payloadEventID)
+		require.NoError(t, err)
+		require.Equal(t, tripRepository.eventID, outboxID)
+		require.Equal(t, outboxID.String(), payloadEventID)
 	})
 }
 
 type outboxFailureRepository struct {
 	service.TripRepository
+	eventID uuid.UUID
 }
 
-func (r outboxFailureRepository) CreateOutboxEvent(ctx context.Context, tx pgx.Tx, event domain.OutboxEvent) error {
+func (r *outboxFailureRepository) CreateOutboxEvent(ctx context.Context, tx pgx.Tx, event domain.OutboxEvent) error {
+	r.eventID = event.ID
 	event.Payload = json.RawMessage(`{`)
 	return r.TripRepository.CreateOutboxEvent(ctx, tx, event)
 }

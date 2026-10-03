@@ -73,10 +73,11 @@ func (u *TripUsecase) PublishTrip(
 		return nil, fmt.Errorf("tripRepo.Update: %w", err)
 	}
 
-	eventID := uuid.New()
+	const eventType = "TripPublished"
+	eventID := newEventID(updatedTrip.ID, eventType)
 	event := TripPublished{
 		EventID:    eventID.String(),
-		EventType:  "TripPublished",
+		EventType:  eventType,
 		TripID:     updatedTrip.ID.String(),
 		DriverID:   updatedTrip.DriverID.String(),
 		CompanyID:  req.ClientID.String(),
@@ -99,4 +100,8 @@ func (u *TripUsecase) PublishTrip(
 	}
 
 	return &PublishTripResponse{TripID: updatedTrip.ID}, nil
+}
+
+func newEventID(tripID uuid.UUID, eventType string) uuid.UUID {
+	return uuid.NewSHA1(tripID, []byte(eventType))
 }

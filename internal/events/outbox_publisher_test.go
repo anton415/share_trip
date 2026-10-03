@@ -156,10 +156,12 @@ func newPublisherTestPool(t *testing.T) *pgxpool.Pool {
 
 func seedPublisherEvent(t *testing.T, pool *pgxpool.Pool) domain.TripPublished {
 	t.Helper()
+	tripID := uuid.New()
+	const eventType = "TripPublished"
 	event := domain.TripPublished{
-		EventID:    uuid.NewString(),
-		EventType:  "TripPublished",
-		TripID:     uuid.NewString(),
+		EventID:    uuid.NewSHA1(tripID, []byte(eventType)).String(),
+		EventType:  eventType,
+		TripID:     tripID.String(),
 		DriverID:   uuid.NewString(),
 		CompanyID:  uuid.NewString(),
 		OccurredAt: time.Now().UTC(),
