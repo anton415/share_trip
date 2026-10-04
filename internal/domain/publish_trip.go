@@ -10,6 +10,9 @@ import (
 	"github.com/jackc/pgx/v5"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/propagation"
+
+	"job4j.ru/share-trip/internal/observability/logctx"
 )
 
 type PublishTripRequest struct {
@@ -75,13 +78,18 @@ func (u *TripUsecase) PublishTrip(
 
 	const eventType = "TripPublished"
 	eventID := newEventID(updatedTrip.ID, eventType)
+	metadata := propagation.MapCarrier{}
+	propagation.TraceContext{}.Inject(ctx, metadata)
 	event := TripPublished{
-		EventID:    eventID.String(),
-		EventType:  eventType,
-		TripID:     updatedTrip.ID.String(),
-		DriverID:   updatedTrip.DriverID.String(),
-		CompanyID:  req.ClientID.String(),
-		OccurredAt: time.Now().UTC(),
+		EventID:       eventID.String(),
+		EventType:     eventType,
+		CorrelationID: logctx.CorrelationID(ctx),
+		CausationID:   logctx.RequestID(ctx),
+		TraceParent:   metadata.Get("traceparent"),
+		TripID:        updatedTrip.ID.String(),
+		DriverID:      updatedTrip.DriverID.String(),
+		CompanyID:     req.ClientID.String(),
+		OccurredAt:    time.Now().UTC(),
 	}
 	payload, err := json.Marshal(event)
 	if err != nil {

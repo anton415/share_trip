@@ -1,33 +1,46 @@
 @startuml
-title TripPublished with outbox and inbox
+title Trip publication: request_id, correlation_id, event_id and trace context
 
 actor Driver
 participant "ShareTrip API" as API
 participant "Trip Application Service" as TripService
-database "Trip DB" as TripDB
+participant "Contract Service" as Contract
+database "Trip DB\ntrips + outbox_events" as TripDB
 participant "Outbox Publisher" as Publisher
 queue "Kafka: trip.events" as Kafka
 participant "Notification Service" as Notification
-database "Notification DB" as NotificationDB
+database "Notification DB\nprocessed_events (inbox) + notifications" as NotificationDB
 
-Driver -> API: POST /trip/publish {tripId}
+Driver -> API: POST /trip/publish {tripId}\nX-Request-ID: req-123\nX-Correlation-ID: req-123\ntraceparent: 00-<trace_id>-<span_id>-01
 API -> TripService: PublishTrip(ctx, PublishTripCommand)
+TripService -> Contract: POST /contracts/check-service\nservice_code=trip_creation\nX-Request-ID, X-Correlation-ID, X-Trip-ID, traceparent
+note right of Contract
+  Log: service=contract, operation=CheckPermission,
+  request_id, correlation_id, trip_id, user_id, result.
+end note
+Contract --> TripService: allowed=true
 TripService -> TripDB: BEGIN; load trip FOR UPDATE
 TripDB --> TripService: Trip
 TripService -> TripService: Check DriverID = ClientID and status = draft
 TripService -> TripDB: Save published + history + outbox_events (TripPublished)
+note right of TripDB
+  JSON metadata: event_id=outbox_events.id,
+  event_type=TripPublished, correlation_id=req-123,
+  causation_id=req-123, traceparent, occurred_at.
+  Metadata is preserved on publisher retries.
+end note
 TripService -> TripDB: COMMIT
 TripDB --> TripService: committed
 
 TripService --> API: tripId
-API --> Driver: 200 {tripId}
+API --> Driver: 200 {tripId}\nX-Request-ID, X-Correlation-ID, trace-id
 
 loop every second
   Publisher -> TripDB: BEGIN
   Publisher -> TripDB: SELECT pending ORDER BY created_at\nLIMIT 100 FOR UPDATE SKIP LOCKED
   TripDB --> Publisher: outbox events
   loop each event
-    Publisher -> Kafka: PublishTripPublished(key=trip_id)
+    Publisher -> Kafka: PublishTripPublished(key=trip_id)\nheaders: event_id, event_type,\ncorrelation_id, causation_id, traceparent
     note over Publisher, Kafka
       event_id=outbox_events.id, event_type=TripPublished, trip_id,
       driver_id=ClientID, company_id=ClientID, occurred_at
@@ -40,6 +53,11 @@ end
 
 Notification -> Kafka: FetchMessage(group=notification-service)
 Kafka --> Notification: TripPublished
+Notification -> Notification: Read metadata from headers\nExtract trace context
+note right of Notification
+  Log: service=notification, operation=ConsumeTripPublished,
+  event_id, correlation_id, causation_id, trace_id, result.
+end note
 Notification -> Notification: HandleTripPublished(ctx, event)
 Notification -> NotificationDB: BEGIN
 Notification -> NotificationDB: INSERT processed_events(event_id)\nON CONFLICT DO NOTHING
@@ -52,9 +70,12 @@ end
 Notification -> NotificationDB: COMMIT
 NotificationDB --> Notification: committed
 Notification -> Kafka: CommitMessages(offset)
+Notification -> Notification: Log result=success
 
 note over Notification, NotificationDB
   On a database error: ROLLBACK and no offset commit.
   Kafka can deliver an uncommitted event again after restart.
+  A created notification is stored in the database;
+  no external notification delivery is implemented.
 end note
 @enduml

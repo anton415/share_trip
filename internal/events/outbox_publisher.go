@@ -3,6 +3,7 @@ package events
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"time"
@@ -12,9 +13,11 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"job4j.ru/share-trip/internal/domain"
+	"job4j.ru/share-trip/internal/observability/metrics"
 )
 
 type outboxRepository interface {
+	CountPending(ctx context.Context) (int, error)
 	LockPending(ctx context.Context, tx pgx.Tx) ([]domain.OutboxEvent, error)
 	MarkSent(ctx context.Context, tx pgx.Tx, eventID uuid.UUID) error
 	MarkFailed(ctx context.Context, tx pgx.Tx, eventID uuid.UUID, publishErr error) error
@@ -25,10 +28,11 @@ type tripPublisher interface {
 }
 
 type OutboxPublisher struct {
-	pool   *pgxpool.Pool
-	outbox outboxRepository
-	kafka  tripPublisher
-	logger *slog.Logger
+	pool    *pgxpool.Pool
+	outbox  outboxRepository
+	kafka   tripPublisher
+	logger  *slog.Logger
+	metrics *metrics.Metrics
 }
 
 func NewOutboxPublisher(
@@ -36,8 +40,9 @@ func NewOutboxPublisher(
 	outbox outboxRepository,
 	kafka tripPublisher,
 	logger *slog.Logger,
+	appMetrics *metrics.Metrics,
 ) *OutboxPublisher {
-	return &OutboxPublisher{pool: pool, outbox: outbox, kafka: kafka, logger: logger}
+	return &OutboxPublisher{pool: pool, outbox: outbox, kafka: kafka, logger: logger, metrics: appMetrics}
 }
 
 func (p *OutboxPublisher) Run(ctx context.Context) error {
@@ -57,7 +62,7 @@ func (p *OutboxPublisher) Run(ctx context.Context) error {
 }
 
 func (p *OutboxPublisher) publishBatch(ctx context.Context) error {
-	return pgx.BeginFunc(ctx, p.pool, func(tx pgx.Tx) error {
+	publishErr := pgx.BeginFunc(ctx, p.pool, func(tx pgx.Tx) error {
 		events, err := p.outbox.LockPending(ctx, tx)
 		if err != nil {
 			return err
@@ -72,12 +77,15 @@ func (p *OutboxPublisher) publishBatch(ctx context.Context) error {
 				err = p.kafka.PublishTripPublished(ctx, message)
 			}
 			if err != nil {
+				p.metrics.OutboxPublishTotal.WithLabelValues(metrics.ResultError).Inc()
+				p.metrics.OutboxPublishFailed.Inc()
 				if err := p.outbox.MarkFailed(ctx, tx, event.ID, err); err != nil {
 					return err
 				}
 				continue
 			}
 
+			p.metrics.OutboxPublishTotal.WithLabelValues(metrics.ResultSuccess).Inc()
 			if err := p.outbox.MarkSent(ctx, tx, event.ID); err != nil {
 				return err
 			}
@@ -85,4 +93,9 @@ func (p *OutboxPublisher) publishBatch(ctx context.Context) error {
 
 		return nil
 	})
+	pending, countErr := p.outbox.CountPending(ctx)
+	if countErr == nil {
+		p.metrics.OutboxPending.Set(float64(pending))
+	}
+	return errors.Join(publishErr, countErr)
 }

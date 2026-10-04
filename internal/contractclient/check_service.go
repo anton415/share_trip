@@ -5,17 +5,32 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"time"
 
+	"go.opentelemetry.io/otel/propagation"
+
+	"job4j.ru/share-trip/internal/observability/logctx"
+	"job4j.ru/share-trip/internal/observability/metrics"
 	"job4j.ru/share-trip/internal/service"
 )
 
 func (c *Client) CheckService(ctx context.Context, companyID string, serviceCode string) (service.CheckResult, error) {
+	started := time.Now()
+	result := metrics.ResultError
+	defer func() {
+		c.metrics.ContractRequestTotal.WithLabelValues(result).Inc()
+		c.metrics.ContractRequestDuration.WithLabelValues(result).Observe(time.Since(started).Seconds())
+	}()
 	ctx, cancel := context.WithTimeout(ctx, c.timeout)
 	defer cancel()
-	resp, err := c.http.R().
+	request := c.http.R().
 		SetContext(ctx).
-		SetBody(map[string]string{"client_id": companyID, "service_code": serviceCode}).
-		Post("/contracts/check-service")
+		SetHeader("X-Request-ID", logctx.RequestID(ctx)).
+		SetHeader("X-Correlation-ID", logctx.CorrelationID(ctx)).
+		SetHeader("X-Trip-ID", logctx.TripID(ctx)).
+		SetBody(map[string]string{"client_id": companyID, "service_code": serviceCode})
+	propagation.TraceContext{}.Inject(ctx, propagation.HeaderCarrier(request.Header))
+	resp, err := request.Post("/contracts/check-service")
 	if err != nil {
 		return service.CheckResult{}, fmt.Errorf("%w: %w", ErrUnavailable, err)
 	}
@@ -32,6 +47,7 @@ func (c *Client) CheckService(ctx context.Context, companyID string, serviceCode
 	if err := json.Unmarshal(resp.Body(), &response); err != nil || response.Allowed == nil || response.Reason == nil {
 		return service.CheckResult{}, ErrInvalidResponse
 	}
+	result = metrics.ResultSuccess
 	return service.CheckResult{
 		Allowed: *response.Allowed,
 		Reason:  *response.Reason,

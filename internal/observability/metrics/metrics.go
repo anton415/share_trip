@@ -7,6 +7,7 @@ import (
 
 const (
 	ResultSuccess          = "success"
+	ResultError            = "error"
 	ResultValidationError  = "validation_error"
 	ResultNotFound         = "not_found"
 	ResultForbidden        = "forbidden"
@@ -35,10 +36,32 @@ type Metrics struct {
 
 	RepositoryQueryTotal    *prometheus.CounterVec
 	RepositoryQueryDuration *prometheus.HistogramVec
+
+	ContractRequestTotal    *prometheus.CounterVec
+	ContractRequestDuration *prometheus.HistogramVec
+	OutboxPending           prometheus.Gauge
+	OutboxPublishTotal      *prometheus.CounterVec
+	OutboxPublishFailed     prometheus.Counter
 }
 
 func New(reg prometheus.Registerer) *Metrics {
 	m := &Metrics{
+		ContractRequestTotal: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "sharetrip_contract_request_total", Help: "Completed contract checks, including retries within each check",
+		}, []string{"result"}),
+		ContractRequestDuration: prometheus.NewHistogramVec(prometheus.HistogramOpts{
+			Name: "sharetrip_contract_request_duration_seconds", Help: "Duration of contract checks including retries",
+			Buckets: prometheus.DefBuckets,
+		}, []string{"result"}),
+		OutboxPending: prometheus.NewGauge(prometheus.GaugeOpts{
+			Name: "sharetrip_outbox_pending_total", Help: "Number of pending outbox events after the latest publisher batch",
+		}),
+		OutboxPublishTotal: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "sharetrip_outbox_publish_total", Help: "Outbox event publication attempts by result",
+		}, []string{"result"}),
+		OutboxPublishFailed: prometheus.NewCounter(prometheus.CounterOpts{
+			Name: "sharetrip_outbox_publish_failed_total", Help: "Failed outbox event publication attempts",
+		}),
 		HTTPRequestTotal: prometheus.NewCounterVec(
 			prometheus.CounterOpts{
 				Namespace: "sharetrip",
@@ -128,6 +151,11 @@ func New(reg prometheus.Registerer) *Metrics {
 		m.TripPublishDuration,
 		m.RepositoryQueryTotal,
 		m.RepositoryQueryDuration,
+		m.ContractRequestTotal,
+		m.ContractRequestDuration,
+		m.OutboxPending,
+		m.OutboxPublishTotal,
+		m.OutboxPublishFailed,
 	)
 
 	return m

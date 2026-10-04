@@ -22,6 +22,7 @@ type startTripTransaction func(
 
 func (s *TripService) StartTrip(ctx context.Context, command StartTripCommand) (uuid.UUID, error) {
 	started := time.Now()
+	ctx = logctx.WithTripID(ctx, command.TripID.String())
 	result, err := s.contracts.CheckService(ctx, command.ClientID.String(), "trip_start")
 	logctx.Logger(ctx).Info("contract service check", "trip_id", command.TripID, "company_id", command.ClientID,
 		"service_code", "trip_start", "allowed", result.Allowed, "reason", result.Reason,

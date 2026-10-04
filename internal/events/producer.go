@@ -33,6 +33,13 @@ func (p *Producer) PublishTripPublished(ctx context.Context, event domain.TripPu
 	return p.writer.WriteMessages(ctx, kafka.Message{
 		Key:   []byte(event.TripID),
 		Value: data,
+		Headers: []kafka.Header{
+			{Key: "event_id", Value: []byte(event.EventID)},
+			{Key: "event_type", Value: []byte(event.EventType)},
+			{Key: "correlation_id", Value: []byte(event.CorrelationID)},
+			{Key: "causation_id", Value: []byte(event.CausationID)},
+			{Key: "traceparent", Value: []byte(event.TraceParent)},
+		},
 	})
 }
 

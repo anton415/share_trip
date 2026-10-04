@@ -12,11 +12,13 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/require"
 
 	"job4j.ru/share-trip/internal/api"
 	"job4j.ru/share-trip/internal/contractclient"
 	"job4j.ru/share-trip/internal/domain"
+	"job4j.ru/share-trip/internal/observability/metrics"
 	"job4j.ru/share-trip/internal/service"
 )
 
@@ -82,7 +84,7 @@ func TestServer_StartTrip(t *testing.T) {
 		}))
 		defer contractService.Close()
 
-		fixture := newTestFixtureWithContracts(contractclient.New(contractService.URL, time.Millisecond, 0))
+		fixture := newTestFixtureWithContracts(contractclient.New(contractService.URL, time.Millisecond, 0, metrics.New(prometheus.NewRegistry())))
 		trip := createPublishedTrip(t, fixture)
 
 		resp := sendStartTrip(t, fixture.app, trip.ID)
@@ -98,9 +100,9 @@ func createPublishedTrip(t *testing.T, fixture testFixture) api.CreateTripRespon
 	t.Helper()
 
 	trip := createDraftTrip(t, fixture)
-	resp := sendMoveTripDraftToPublished(t, fixture.app, api.MoveTripDraftToPublishedRequest{
+	resp := sendMoveTripDraftToPublished(t, newTestFixture().app, api.MoveTripDraftToPublishedRequest{
 		TripID: trip.ID.String(),
-	})
+	}, fixture.clientID.String())
 	defer closeResponseBody(t, resp.Body)
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 	return trip

@@ -112,7 +112,7 @@ type testFixture struct {
 }
 
 func newTestFixture() testFixture {
-	return newTestFixtureWithContracts(nil)
+	return newTestFixtureWithContracts(checkServiceStub{result: service.CheckResult{Allowed: true}})
 }
 
 func newTestFixtureWithContracts(contracts service.ContractChecker) testFixture {

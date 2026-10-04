@@ -15,11 +15,14 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/jackc/pgx/v5/stdlib"
 	"github.com/pressly/goose/v3"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/require"
 	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/modules/postgres"
 
 	"job4j.ru/share-trip/internal/domain"
+	"job4j.ru/share-trip/internal/observability/metrics"
 	repo "job4j.ru/share-trip/internal/repository"
 )
 
@@ -38,8 +41,9 @@ func TestOutboxPublisherRetries(t *testing.T) {
 		}
 		return nil
 	})
+	appMetrics := metrics.New(prometheus.NewRegistry())
 	publisher := NewOutboxPublisher(pool, repo.NewPostgresTripRepository(pool, nil), kafka,
-		slog.New(slog.NewTextHandler(io.Discard, nil)))
+		slog.New(slog.NewTextHandler(io.Discard, nil)), appMetrics)
 	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 	done := make(chan struct{})
 	var runErr error
@@ -55,12 +59,15 @@ func TestOutboxPublisherRetries(t *testing.T) {
 	require.Eventually(t, func() bool {
 		var sent int
 		err := pool.QueryRow(ctx, `SELECT COUNT(*) FROM outbox_events WHERE status = 'sent'`).Scan(&sent)
-		return err == nil && sent == 2
+		return err == nil && sent == 2 && testutil.ToFloat64(appMetrics.OutboxPending) == 0
 	}, 5*time.Second, 20*time.Millisecond)
 	cancel()
 	<-done
 	require.ErrorIs(t, runErr, context.Canceled)
 	require.Equal(t, []domain.TripPublished{first, second, first}, calls)
+	require.Equal(t, float64(2), testutil.ToFloat64(appMetrics.OutboxPublishTotal.WithLabelValues("success")))
+	require.Equal(t, float64(1), testutil.ToFloat64(appMetrics.OutboxPublishTotal.WithLabelValues("error")))
+	require.Equal(t, float64(1), testutil.ToFloat64(appMetrics.OutboxPublishFailed))
 
 	var attempts int
 	var lastError *string
@@ -91,7 +98,8 @@ func TestOutboxPublisherMarkSentFailure(t *testing.T) {
 		calls = append(calls, event)
 		return nil
 	})
-	publisher := NewOutboxPublisher(pool, outbox, kafka, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	appMetrics := metrics.New(prometheus.NewRegistry())
+	publisher := NewOutboxPublisher(pool, outbox, kafka, slog.New(slog.NewTextHandler(io.Discard, nil)), appMetrics)
 	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 	defer cancel()
 
@@ -100,6 +108,7 @@ func TestOutboxPublisherMarkSentFailure(t *testing.T) {
 	err := pool.QueryRow(ctx, `SELECT COUNT(*) FROM outbox_events WHERE status = 'pending'`).Scan(&pending)
 	require.NoError(t, err)
 	require.Equal(t, 2, pending)
+	require.Equal(t, float64(2), testutil.ToFloat64(appMetrics.OutboxPending))
 
 	outbox.err = nil
 	require.NoError(t, publisher.publishBatch(ctx))
@@ -108,6 +117,9 @@ func TestOutboxPublisherMarkSentFailure(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 2, sent)
 	require.Equal(t, []domain.TripPublished{first, second, first, second}, calls)
+	require.Equal(t, float64(0), testutil.ToFloat64(appMetrics.OutboxPending))
+	require.Equal(t, float64(4), testutil.ToFloat64(appMetrics.OutboxPublishTotal.WithLabelValues("success")))
+	require.Equal(t, float64(0), testutil.ToFloat64(appMetrics.OutboxPublishFailed))
 }
 
 type tripPublisherFunc func(context.Context, domain.TripPublished) error
@@ -159,12 +171,15 @@ func seedPublisherEvent(t *testing.T, pool *pgxpool.Pool) domain.TripPublished {
 	tripID := uuid.New()
 	const eventType = "TripPublished"
 	event := domain.TripPublished{
-		EventID:    uuid.NewSHA1(tripID, []byte(eventType)).String(),
-		EventType:  eventType,
-		TripID:     tripID.String(),
-		DriverID:   uuid.NewString(),
-		CompanyID:  uuid.NewString(),
-		OccurredAt: time.Now().UTC(),
+		EventID:       uuid.NewSHA1(tripID, []byte(eventType)).String(),
+		EventType:     eventType,
+		CorrelationID: uuid.NewString(),
+		CausationID:   uuid.NewString(),
+		TraceParent:   "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01",
+		TripID:        tripID.String(),
+		DriverID:      uuid.NewString(),
+		CompanyID:     uuid.NewString(),
+		OccurredAt:    time.Now().UTC(),
 	}
 	payload, err := json.Marshal(event)
 	require.NoError(t, err)

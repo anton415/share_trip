@@ -1,0 +1,419 @@
+{
+  "annotations": {
+    "list": []
+  },
+  "editable": false,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "panels": [
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "min": 0
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 0
+      },
+      "id": 1,
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "editorMode": "code",
+          "expr": "sum by (result) (rate(sharetrip_trip_publish_total{job=\"sharetrip\"}[5m]))",
+          "legendFormat": "{{result}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Trip publication rate",
+      "type": "timeseries",
+      "description": "Вызовы PublishTrip в секунду по результату, среднее за 5 минут."
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0,
+          "max": 1
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 8,
+        "y": 0
+      },
+      "id": 2,
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "editorMode": "code",
+          "expr": "(sum(rate(sharetrip_trip_publish_total{job=\"sharetrip\",result!=\"success\"}[5m])) or (0 * sum(rate(sharetrip_trip_publish_total{job=\"sharetrip\"}[5m])))) / sum(rate(sharetrip_trip_publish_total{job=\"sharetrip\"}[5m]))",
+          "legendFormat": "errors / all publications",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Trip publication error rate",
+      "type": "timeseries",
+      "description": "Доля результатов PublishTrip, отличных от success, включая отказ в доступе. При отсутствии вызовов доля не определена."
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "min": 0
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 0
+      },
+      "id": 3,
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "editorMode": "code",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(sharetrip_http_request_duration_seconds_bucket{job=\"sharetrip\",method=\"POST\",path=\"/trip/publish\"}[5m])))",
+          "legendFormat": "p95",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "PublishTrip HTTP p95 latency",
+      "type": "timeseries",
+      "description": "p95 полного HTTP-запроса POST /trip/publish за 5 минут, включая middleware и обработчик."
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "min": 0
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 8
+      },
+      "id": 4,
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "editorMode": "code",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(sharetrip_contract_request_duration_seconds_bucket{job=\"sharetrip\"}[5m])))",
+          "legendFormat": "p95",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Contract request p95 latency",
+      "type": "timeseries",
+      "description": "p95 проверки прав вместе с внутренними HTTP retries. Общая метрика клиента включает PublishTrip и StartTrip."
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "min": 0
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 8,
+        "y": 8
+      },
+      "id": 5,
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "editorMode": "code",
+          "expr": "max(sharetrip_outbox_pending_total{job=\"sharetrip\"})",
+          "legendFormat": "pending events",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Outbox backlog",
+      "type": "timeseries",
+      "description": "Все pending-события в общей БД после последнего прохода publisher; max не суммирует одну очередь по экземплярам сервиса."
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "min": 0
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 8
+      },
+      "id": 6,
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "editorMode": "code",
+          "expr": "sum(increase(sharetrip_outbox_publish_failed_total{job=\"sharetrip\"}[5m]))",
+          "legendFormat": "failed attempts",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Outbox publication errors (5m)",
+      "type": "timeseries",
+      "description": "Прирост ошибок декодирования или отправки в Kafka за последние 5 минут. Повторная неудачная попытка учитывается снова."
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "min": 0
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 16
+      },
+      "id": 7,
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "editorMode": "code",
+          "expr": "sum(kafka_consumergroup_lag{job=\"kafka\",topic=\"trip.events\",consumergroup=\"notification-service\"})",
+          "legendFormat": "unconsumed messages",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Kafka consumer lag",
+      "type": "timeseries",
+      "description": "Lag группы notification-service по всем partitions topic trip.events. Источник: Kafka Exporter. Нет группы или offsets — возможен No data, а не нулевой lag."
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "min": 0
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 8,
+        "y": 16
+      },
+      "id": 8,
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "editorMode": "code",
+          "expr": "sum(increase(notification_inbox_duplicate_total{job=\"notification\"}[5m]))",
+          "legendFormat": "duplicate events",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Inbox duplicates (5m)",
+      "type": "timeseries",
+      "description": "Прирост повторных событий, отсечённых inbox, за последние 5 минут."
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0,
+          "max": 1
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 16
+      },
+      "id": 9,
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "editorMode": "code",
+          "expr": "(sum(rate(notification_send_total{job=\"notification\",result=\"error\"}[5m])) or (0 * sum(rate(notification_send_total{job=\"notification\"}[5m])))) / sum(rate(notification_send_total{job=\"notification\"}[5m]))",
+          "legendFormat": "errors / all creations",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Notification creation error rate",
+      "type": "timeseries",
+      "description": "Доля ошибок сохранения уведомления по TripPublished в БД. Дубли не входят в счётчик; внешняя доставка не реализована. При отсутствии попыток доля не определена."
+    }
+  ],
+  "refresh": "10s",
+  "schemaVersion": 39,
+  "tags": [
+    "sharetrip",
+    "process"
+  ],
+  "templating": {
+    "list": []
+  },
+  "time": {
+    "from": "now-15m",
+    "to": "now"
+  },
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "Trip publication",
+  "uid": "sharetrip-trip-publication",
+  "version": 1,
+  "description": "Публикация поездки: HTTP → Contract Service → outbox → Kafka → Notification Service → inbox и создание уведомления."
+}

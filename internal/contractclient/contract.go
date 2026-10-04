@@ -8,6 +8,8 @@ import (
 	"time"
 
 	"github.com/go-resty/resty/v2"
+
+	"job4j.ru/share-trip/internal/observability/metrics"
 )
 
 var (
@@ -18,9 +20,10 @@ var (
 type Client struct {
 	http    *resty.Client
 	timeout time.Duration
+	metrics *metrics.Metrics
 }
 
-func New(baseURL string, timeout time.Duration, retryCount int) *Client {
+func New(baseURL string, timeout time.Duration, retryCount int, appMetrics *metrics.Metrics) *Client {
 	client := resty.New().
 		SetBaseURL(baseURL).
 		SetTimeout(timeout).
@@ -40,5 +43,5 @@ func New(baseURL string, timeout time.Duration, retryCount int) *Client {
 				r.StatusCode() == http.StatusServiceUnavailable ||
 				r.StatusCode() == http.StatusGatewayTimeout
 		})
-	return &Client{http: client, timeout: timeout}
+	return &Client{http: client, timeout: timeout, metrics: appMetrics}
 }

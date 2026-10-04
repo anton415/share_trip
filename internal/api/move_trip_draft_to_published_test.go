@@ -13,9 +13,12 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/otel/propagation"
 
 	"job4j.ru/share-trip/internal/api"
+	"job4j.ru/share-trip/internal/contractclient"
 	"job4j.ru/share-trip/internal/domain"
+	"job4j.ru/share-trip/internal/observability/logctx"
 	repo "job4j.ru/share-trip/internal/repository"
 	"job4j.ru/share-trip/internal/service"
 )
@@ -246,7 +249,8 @@ func TestServer_MoveTripDraftToPublished(t *testing.T) {
 		tripRepository := &outboxFailureRepository{
 			TripRepository: repo.NewPostgresTripRepository(testPool, fixture.metrics),
 		}
-		tripService := service.NewTripService(tripRepository, testPool, fixture.metrics, nil)
+		tripService := service.NewTripService(tripRepository, testPool, fixture.metrics,
+			checkServiceStub{result: service.CheckResult{Allowed: true}})
 		tripID, err := tripService.PublishTrip(testCtx, service.PublishTripCommand{
 			TripID:   created.ID,
 			ClientID: fixture.clientID,
@@ -280,6 +284,65 @@ func TestServer_MoveTripDraftToPublished(t *testing.T) {
 		require.Equal(t, tripRepository.eventID, outboxID)
 		require.Equal(t, outboxID.String(), payloadEventID)
 	})
+}
+
+func TestPublishTripOutboxMetadata(t *testing.T) {
+	requireIntegration(t)
+	t.Parallel()
+
+	fixture := newTestFixture()
+	trip := createDraftTrip(t, fixture)
+	tripService := service.NewTripService(
+		repo.NewPostgresTripRepository(testPool, fixture.metrics), testPool, fixture.metrics,
+		checkServiceStub{result: service.CheckResult{Allowed: true}},
+	)
+	const traceparent = "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01"
+	ctx := logctx.WithRequestID(testCtx, "req-123")
+	ctx = logctx.WithCorrelationID(ctx, "pub-777")
+	ctx = propagation.TraceContext{}.Extract(ctx, propagation.MapCarrier{"traceparent": traceparent})
+	_, err := tripService.PublishTrip(ctx, service.PublishTripCommand{
+		TripID: trip.ID, ClientID: fixture.clientID,
+	})
+	require.NoError(t, err)
+
+	var payload []byte
+	err = testPool.QueryRow(testCtx, `SELECT payload FROM outbox_events WHERE aggregate_id = $1`, trip.ID).Scan(&payload)
+	require.NoError(t, err)
+	var event map[string]any
+	require.NoError(t, json.Unmarshal(payload, &event))
+	require.Equal(t, "pub-777", event["correlation_id"])
+	require.Equal(t, "req-123", event["causation_id"])
+	require.Equal(t, traceparent, event["traceparent"])
+}
+
+func TestServer_PublishTripContractRejection(t *testing.T) {
+	requireIntegration(t)
+	t.Parallel()
+
+	for _, tt := range []struct {
+		name   string
+		err    error
+		status int
+	}{
+		{name: "denied", status: http.StatusForbidden},
+		{name: "unavailable", err: contractclient.ErrUnavailable, status: http.StatusServiceUnavailable},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			fixture := newTestFixtureWithContracts(checkServiceStub{err: tt.err})
+			trip := createDraftTrip(t, fixture)
+			resp := sendMoveTripDraftToPublished(t, fixture.app, api.MoveTripDraftToPublishedRequest{
+				TripID: trip.ID.String(),
+			})
+			defer closeResponseBody(t, resp.Body)
+			require.Equal(t, tt.status, resp.StatusCode)
+			requireTripStatus(t, fixture, trip.ID, domain.TripStatusDraft)
+			var count int
+			err := testPool.QueryRow(testCtx, `SELECT COUNT(*) FROM outbox_events WHERE aggregate_id = $1`, trip.ID).Scan(&count)
+			require.NoError(t, err)
+			require.Zero(t, count)
+		})
+	}
 }
 
 type outboxFailureRepository struct {

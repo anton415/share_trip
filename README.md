@@ -5,7 +5,8 @@ ShareTrip — серверный сервис для управления сов
 ## Возможности
 
 - создание поездки в статусе `draft`;
-- публикация поездки с проверкой прав доступа и текущего статуса;
+- публикация поездки с проверкой прав доступа, текущего статуса и разрешения
+  `trip_creation` в Contract Service (нужен активный договор с включённой услугой);
 - получение поездки по идентификатору;
 - аутентификация запросов к поездкам через Keycloak и проверка client-role;
 - транзакционное сохранение истории поездки и событий в таблице исходящих сообщений (`outbox`);
@@ -152,19 +153,55 @@ kubectl rollout restart deployment/sharetrip -n sharetrip
 
 Приложение запускается на хосте командой `make run`. Prometheus обращается к нему через `host.docker.internal:8080`, поэтому target `sharetrip` станет `UP` только после запуска приложения. Источник данных Prometheus в Grafana создаётся автоматически из файла конфигурации.
 
-Состояние сбора можно проверить на странице `http://localhost:9090/targets`. Все три target-а — `prometheus`, `sharetrip` и `postgres` — должны иметь состояние `UP`. Минимальные проверочные запросы в Prometheus:
+Notification Service экспортирует метрики на `:8081/metrics`; target `notification`
+использует `host.docker.internal:8081` и станет `UP` после запуска этого сервиса.
+
+Kafka Exporter собирает lag consumer group из Kafka; Prometheus обращается к нему
+по внутреннему адресу `kafka-exporter:9308`.
+
+Состояние сбора можно проверить на странице `http://localhost:9090/targets`. При запущенных сервисах пять target-ов — `prometheus`, `sharetrip`, `notification`, `kafka` и `postgres` — должны иметь состояние `UP`. Минимальные проверочные запросы в Prometheus:
 
 ```promql
 up{job="sharetrip"}
+up{job="notification"}
+up{job="kafka"}
 pg_up{job="postgres"}
 go_goroutines{job="sharetrip"}
 ```
 
-Grafana автоматически загружает в папку `ShareTrip` три dashboard-а:
+Метрики связей процесса:
+
+| Метрика | Значение |
+| --- | --- |
+| `sharetrip_contract_request_total{result}` | Завершённые вызовы проверки прав; внутренние HTTP retries входят в один вызов. |
+| `sharetrip_contract_request_duration_seconds{result}` | Длительность проверки прав вместе с retries. |
+| `sharetrip_outbox_pending_total` | Gauge всех записей `pending`, обновляемый после каждого прохода publisher. При ошибке чтения сохраняется последнее значение. |
+| `sharetrip_outbox_publish_total{result}` | Попытки публикации событий; успешная отправка учитывается даже при последующем откате статуса outbox. |
+| `sharetrip_outbox_publish_failed_total` | Ошибки декодирования события или отправки в Kafka. |
+
+Значения `result`: `success` и `error`. Корректный ответ Contract Service с
+`allowed=false` — успешная проверка прав; отказ в доступе отражается в метрике публикации поездки.
+
+Grafana автоматически загружает в папку `ShareTrip` четыре dashboard-а:
 
 - `ShareTrip Runtime Go` — goroutines, память, GC, CPU и HTTP RPS;
 - `ShareTrip PostgreSQL` — доступность, соединения, размер базы, commits и rollbacks;
-- `ShareTrip Application` — HTTP RPS и p95, результаты операций с поездками и p95 репозитория.
+- `ShareTrip Application` — HTTP RPS и p95, результаты операций с поездками и p95 репозитория;
+- [Trip publication](http://localhost:3000/d/sharetrip-trip-publication) — rate и доля ошибок публикации поездок, p95 HTTP-команды и вызова Contract Service, outbox backlog и ошибки его публикации, Kafka lag, inbox duplicates и доля ошибок создания уведомлений.
+
+Dashboard `Trip publication` использует topic `trip.events` и consumer group
+`notification-service`. Для lag используется `kafka_consumergroup_lag` из
+[Kafka Exporter](https://github.com/danielqsj/kafka_exporter#consumer-groups).
+До появления consumer group и её offsets панель lag может показывать `No data`.
+`notification_send_total` измеряет сохранение уведомления по `TripPublished` в БД.
+Панели ошибок и дублей показывают прирост за последние 5 минут; доли ошибок — от 0 до 100%.
+
+Для уже запущенного стека примените изменения мониторинга:
+
+```bash
+docker compose -f deploy/docker-compose.yml up -d kafka-exporter grafana
+docker compose -f deploy/docker-compose.yml kill -s SIGHUP prometheus
+```
 
 Dashboard-ы хранятся как код и недоступны для сохранения изменений через UI. Панели бизнес-процессов и репозитория появляются после соответствующих HTTP-запросов и двух циклов сбора Prometheus. При отсутствии операций в выбранном временном диапазоне p95 не равен нулю — данных для вычисления квантиля ещё нет.
 
@@ -172,6 +209,75 @@ Dashboard-ы хранятся как код и недоступны для со�
 
 ```bash
 make down
+```
+
+## Как расследовать: уведомление не пришло
+
+Связь этапов показана в [PlantUML-диаграмме публикации](docs/publish_trip.puml).
+Начните с [dashboard Trip publication](http://localhost:3000/d/sharetrip-trip-publication),
+затем найдите конкретный запрос и событие по идентификаторам.
+
+1. Найдите ответ на `POST /trip/publish`: `tripId`, `X-Request-ID`,
+   `X-Correlation-ID` и, если обработчик был вызван, `trace-id`.
+   `200` означает новую публикацию; `204` — поездка уже опубликована, новое событие не создаётся.
+   При ошибке сначала разберите HTTP-ответ.
+2. Найдите связанные записи ShareTrip в `logs/app.log` или Loki по `request_id`
+   и `correlation_id`; trace можно открыть в Jaeger по `trace-id`.
+   Middleware добавляет эти поля в контекст логгера, но отдельного access log
+   каждого запроса сейчас нет. Отсутствие строки не доказывает отсутствие вызова.
+   В локальной конфигурации Alloy собирает только ShareTrip; логи Contract и
+   Notification смотрите в stdout соответствующих процессов.
+3. В Contract найдите `service=contract`, `operation=CheckPermission` с тем же
+   `request_id`/`correlation_id` и `trip_id`. Проверьте `result=allowed|denied|error`.
+   Для публикации нужна услуга `trip_creation`; отказ или ошибка проверки
+   прерывают публикацию до транзакции поездки и outbox.
+4. В БД ShareTrip проверьте поездку и `outbox_events` запросами ниже.
+   `outbox_events.id` — это `event_id`; `payload.correlation_id` связывает событие
+   с процессом, `payload.causation_id` — с исходным `request_id`.
+   Если записи нет, проверьте результат транзакции публикации.
+   Для `pending` проверьте `attempts`, `last_error` и работу publisher.
+   `sent` вместе с `sent_at` означает подтверждённую отправку в Kafka;
+   `last_error` может оставаться от предыдущей попытки. Даже `pending` может уже
+   попасть в Kafka, если после отправки не удалось сохранить статус.
+5. В Kafka UI найдите событие в topic `trip.events` по `event_id` из headers
+   или JSON. Сверьте `event_type`, `correlation_id`, `causation_id`, `traceparent`.
+   На dashboard проверьте lag группы `notification-service`: рост показывает
+   отставание, а `No data` не означает нулевой lag. Если настройки topic/group
+   изменены, используйте значения `TRIP_EVENTS_TOPIC` и `KAFKA_GROUP_ID`.
+6. В stdout Notification найдите `service=notification`,
+   `operation=ConsumeTripPublished`, нужный `event_id` и `correlation_id`.
+   Сопоставьте `causation_id` с исходным запросом, `trace_id` — с его trace.
+   Проверьте `result` и `error`: ошибки декодирования, обработки или подтверждения
+   offset останавливают consumer. `success` записывается после подтверждения offset,
+   в том числе при обработке дубля.
+7. В БД Notification проверьте inbox `processed_events` и уведомление по тому же
+   `event_id`. Они сохраняются одной транзакцией; повторное событие увеличивает
+   `notification_inbox_duplicate_total`, но не создаёт новое уведомление.
+   Рост `notification_send_total{result="error"}` указывает на ошибки сохранения.
+   Уведомление со статусом `created` — конечный результат текущей версии:
+   отправки во внешний канал и подтверждения доставки от провайдера пока нет.
+
+Запросы для БД ShareTrip; замените `<trip-id>` идентификатором поездки:
+
+```sql
+SELECT id, status FROM trips WHERE id = '<trip-id>'::uuid;
+
+SELECT id AS event_id, status, attempts, last_error, sent_at,
+       payload->>'correlation_id' AS correlation_id,
+       payload->>'causation_id' AS causation_id,
+       payload->>'traceparent' AS traceparent
+FROM outbox_events
+WHERE aggregate_id = '<trip-id>'::uuid AND event_type = 'TripPublished';
+```
+
+Запросы для БД Notification; замените `<event-id>` значением из outbox:
+
+```sql
+SELECT event_id, processed_at FROM processed_events
+WHERE event_id = '<event-id>'::uuid;
+
+SELECT id, status, created_at FROM notifications
+WHERE type = 'trip_published' AND payload->>'event_id' = '<event-id>';
 ```
 
 ## HTTP-интерфейс

@@ -11,6 +11,7 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 
 	"job4j.ru/share-trip/internal/domain"
+	"job4j.ru/share-trip/internal/observability/logctx"
 	observability "job4j.ru/share-trip/internal/observability/metrics"
 )
 
@@ -36,6 +37,17 @@ func (s *TripService) PublishTrip(ctx context.Context, command PublishTripComman
 		attribute.String("trip_id", command.TripID.String()),
 		attribute.String("client_id", command.ClientID.String()),
 	)
+
+	ctx = logctx.WithTripID(ctx, command.TripID.String())
+	permission, err := s.contracts.CheckService(ctx, command.ClientID.String(), "trip_creation")
+	if err != nil {
+		result = publishTripResult(err)
+		return uuid.Nil, err
+	}
+	if !permission.Allowed {
+		result = observability.ResultForbidden
+		return uuid.Nil, domain.ErrForbidden
+	}
 
 	resp, err := tx(ctx, s.pool, func(tx pgx.Tx) (*domain.PublishTripResponse, error) {
 		return s.tripUsecase.PublishTrip(ctx, tx, domain.PublishTripRequest{

@@ -77,6 +77,9 @@ func TestOutboxRepository(t *testing.T) {
 	`)
 	require.NoError(t, err)
 
+	pending, err := repository.CountPending(ctx)
+	require.NoError(t, err)
+	require.Equal(t, 101, pending)
 	firstTx := beginOutboxTx(t, ctx, pool)
 	firstBatch, err := repository.LockPending(ctx, firstTx)
 	require.NoError(t, err)
