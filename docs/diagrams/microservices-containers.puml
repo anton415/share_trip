@@ -1,0 +1,48 @@
+@startuml
+!pragma layout smetana
+left to right direction
+skinparam shadowing false
+skinparam roundcorner 0
+skinparam defaultTextAlignment center
+skinparam rectangle {
+  BackgroundColor<<Container>> #1168BD
+  FontColor<<Container>> white
+  BackgroundColor<<ExternalSystem>> #777777
+  FontColor<<ExternalSystem>> white
+}
+skinparam database {
+  BackgroundColor #1168BD
+  FontColor white
+}
+skinparam queue {
+  BackgroundColor #1168BD
+  FontColor white
+}
+title ShareTrip: контейнеры и зависимости
+
+actor "Водитель\nПубликует поездку" as driver <<Person>>
+rectangle "Keycloak\nВыдаёт токены и сведения\nо пользователе" as keycloak <<ExternalSystem>>
+rectangle "Локальный мониторинг\nPrometheus / Grafana, Alloy / Loki\nOTel Collector / Jaeger" as monitoring <<ExternalSystem>>
+
+rectangle "ShareTrip — граница системы" {
+  rectangle "ShareTrip\n[Go / Fiber]\n\nHTTP-команды, правила поездки,\nфоновый outbox publisher" as sharetrip <<Container>>
+  rectangle "Contract Service\n[Go / Fiber]\n\nДоговоры и проверка\nдоступности услуг" as contract <<Container>>
+  rectangle "Notification Service\n[Go / kafka-go / Fiber]\n\nKafka consumer, inbox,\nсоздание уведомлений в БД, HTTP API" as notification <<Container>>
+  database "БД sharetrip\n[PostgreSQL]\n\nShareTrip: trips, outbox_events\nNotification: processed_events, notifications" as appdb <<Container>>
+  database "БД sharetrip_contract\n[PostgreSQL]\n\ncontracts, contract_services" as contractdb <<Container>>
+  queue "Kafka\n[Topic: trip.events]\n\nПередаёт TripPublished" as kafka <<Container>>
+}
+
+driver --> sharetrip : POST /trip/publish\n[HTTP / JSON]
+sharetrip --> keycloak : Обмен refresh token\nна access token [HTTP / OIDC]
+sharetrip --> contract : POST /contracts/check-service\ntrip_creation [HTTP, синхронно]
+sharetrip --> appdb : Поездка + outbox\nв одной транзакции [SQL]
+contract --> contractdb : Договоры и услуги [SQL]
+sharetrip --> kafka : Публикация из outbox\n[TripPublished, асинхронно]
+notification --> kafka : Чтение событий\ngroup=notification-service
+notification --> appdb : Inbox + уведомление\nв одной транзакции [SQL]
+sharetrip --> monitoring : logs/app.log через Alloy;\nspans через Collector
+monitoring --> sharetrip : /metrics [Prometheus / HTTP]
+monitoring --> notification : /metrics [Prometheus / HTTP]
+monitoring --> kafka : Consumer lag [Kafka Exporter]
+@enduml

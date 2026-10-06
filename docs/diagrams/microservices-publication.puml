@@ -1,0 +1,71 @@
+@startuml
+title Публикация поездки: HTTP, outbox, Kafka и inbox
+hide footbox
+
+actor "Водитель" as Driver
+participant "ShareTrip\nHTTP + service" as ShareTrip
+participant "Contract Service" as Contract
+database "PostgreSQL\nsharetrip_contract" as ContractDB
+database "PostgreSQL\nsharetrip" as AppDB
+participant "Outbox publisher\ngoroutine ShareTrip" as Publisher
+queue "Kafka\ntrip.events" as Kafka
+participant "Notification Service" as Notification
+
+Driver -> ShareTrip: POST /trip/publish {tripId}
+ShareTrip -> Contract: POST /contracts/check-service\n{client_id, service_code: trip_creation}
+note over ShareTrip, Contract
+  X-Request-ID, X-Correlation-ID, X-Trip-ID, traceparent
+end note
+Contract -> ContractDB: Прочитать договор и доступность услуги
+ContractDB --> Contract: Договор и признак enabled
+Contract --> ShareTrip: 200 {allowed: true, reason: service_allowed}
+
+group Транзакция публикации
+  ShareTrip -> AppDB: BEGIN; SELECT trip FOR UPDATE
+  AppDB --> ShareTrip: Поездка
+  ShareTrip -> ShareTrip: Проверить DriverID = ClientID\nи статус draft
+  ShareTrip -> AppDB: Сохранить published + историю\nINSERT outbox_events (TripPublished, pending)
+  ShareTrip -> AppDB: COMMIT
+  AppDB --> ShareTrip: Транзакция зафиксирована
+end
+
+par HTTP-ответ
+  ShareTrip --> Driver: 200 {tripId}\nX-Request-ID, X-Correlation-ID, trace-id
+else Фоновая доставка и обработка
+  group Транзакция publisher
+    Publisher -> AppDB: BEGIN; SELECT pending\nLIMIT 100 FOR UPDATE SKIP LOCKED
+    AppDB --> Publisher: Сохранённое событие
+    Publisher -> Kafka: TripPublished, key=trip_id\npayload + metadata headers
+    note over Publisher, Kafka
+      event_id, event_type, correlation_id,
+      causation_id, traceparent сохраняются при повторах.
+    end note
+    Kafka --> Publisher: Подтверждение отправки (acks=all)
+    Publisher -> AppDB: UPDATE outbox: sent, sent_at; COMMIT
+  end
+
+  Notification -> Kafka: FetchMessage(group=notification-service)
+  Kafka --> Notification: TripPublished
+  Notification -> Notification: Прочитать metadata и trace context
+
+  group Транзакция inbox и уведомления
+    Notification -> AppDB: BEGIN; INSERT processed_events(event_id)\nON CONFLICT DO NOTHING
+    AppDB --> Notification: Результат вставки
+    alt Новый event_id
+      Notification -> AppDB: INSERT notifications\nrecipient_id=driver_id, status=created
+    else Дубль event_id
+      Notification -> Notification: Пропустить создание уведомления
+    end
+    Notification -> AppDB: COMMIT
+    AppDB --> Notification: Транзакция зафиксирована
+  end
+
+  Notification -> Kafka: CommitMessages(offset)
+end
+
+note over AppDB, Notification
+  Ошибка сохранения: ROLLBACK, offset не подтверждается.
+  После commit БД повтор безопасен благодаря inbox.
+  Итог текущей версии — уведомление в БД, без внешней отправки.
+end note
+@enduml
