@@ -8,7 +8,7 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-func (r *PostgresTripRepository) MarkSent(ctx context.Context, tx pgx.Tx, eventID uuid.UUID) error {
+func (r *PostgresOutboxRepository) MarkSent(ctx context.Context, tx pgx.Tx, eventID uuid.UUID) error {
 	_, err := tx.Exec(ctx, `
 		UPDATE outbox_events
 		SET status = 'sent', sent_at = now()
@@ -21,7 +21,7 @@ func (r *PostgresTripRepository) MarkSent(ctx context.Context, tx pgx.Tx, eventI
 	return nil
 }
 
-func (r *PostgresTripRepository) MarkFailed(
+func (r *PostgresOutboxRepository) MarkFailed(
 	ctx context.Context,
 	tx pgx.Tx,
 	eventID uuid.UUID,

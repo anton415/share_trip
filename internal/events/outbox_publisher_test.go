@@ -42,7 +42,7 @@ func TestOutboxPublisherRetries(t *testing.T) {
 		return nil
 	})
 	appMetrics := metrics.New(prometheus.NewRegistry())
-	publisher := NewOutboxPublisher(pool, repo.NewPostgresTripRepository(pool, nil), kafka,
+	publisher := NewOutboxPublisher(pool, repo.NewPostgresOutboxRepository(pool, nil), kafka,
 		slog.New(slog.NewTextHandler(io.Discard, nil)), appMetrics)
 	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 	done := make(chan struct{})
@@ -89,7 +89,7 @@ func TestOutboxPublisherMarkSentFailure(t *testing.T) {
 	second := seedPublisherEvent(t, pool)
 	markErr := errors.New("cannot mark event sent")
 	outbox := &markSentFailureRepository{
-		outboxRepository: repo.NewPostgresTripRepository(pool, nil),
+		outboxRepository: repo.NewPostgresOutboxRepository(pool, nil),
 		failedID:         uuid.MustParse(second.EventID),
 		err:              markErr,
 	}

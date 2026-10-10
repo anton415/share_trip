@@ -12,6 +12,7 @@ import (
 
 func NewTripService(
 	repo TripRepository,
+	outboxRepo domain.OutboxRepository,
 	pool *pgxpool.Pool,
 	metrics *observability.Metrics,
 	contracts ContractChecker,
@@ -23,7 +24,7 @@ func NewTripService(
 		startTripTx: func(ctx context.Context, block func(pgx.Tx) (*domain.Trip, error)) (*domain.Trip, error) {
 			return tx(ctx, pool, block)
 		},
-		tripUsecase: domain.NewTripUsecase(repo),
+		tripUsecase: domain.NewTripUsecase(repo, outboxRepo),
 		metrics:     metrics,
 	}
 }

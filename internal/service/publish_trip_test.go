@@ -38,7 +38,7 @@ func TestPublishTripChecksPermissionBeforeTransaction(t *testing.T) {
 					return service.CheckResult{}, tt.err
 				})
 			// A rejected check must not access the database or repository.
-			tripService := service.NewTripService(nil, nil, metrics.New(prometheus.NewRegistry()), contracts)
+			tripService := service.NewTripService(nil, nil, nil, metrics.New(prometheus.NewRegistry()), contracts)
 			ctx := logctx.WithRequestID(context.Background(), "req-123")
 			ctx = logctx.WithCorrelationID(ctx, "pub-777")
 			id, err := tripService.PublishTrip(ctx, command)

@@ -76,13 +76,14 @@ func main() {
 	registry := prometheus.NewRegistry()
 	appMetrics := metrics.New(registry)
 	tripRepository := repo.NewPostgresTripRepository(pool, appMetrics)
+	outboxRepository := repo.NewPostgresOutboxRepository(pool, appMetrics)
 	contracts := contractclient.New(
 		cfg.ContractServiceURL,
 		cfg.RequestTimeout,
 		cfg.RetryAttempts,
 		appMetrics,
 	)
-	tripService := service.NewTripService(tripRepository, pool, appMetrics, contracts)
+	tripService := service.NewTripService(tripRepository, outboxRepository, pool, appMetrics, contracts)
 	server := api.NewServer(tripService, pool, registry)
 	app := fiber.New()
 	keycloakAuth := middleware.KeycloakRefreshTokenMiddleware(
@@ -106,7 +107,7 @@ func main() {
 			logger.Error("close Kafka producer", "error", err)
 		}
 	}()
-	publisher := events.NewOutboxPublisher(pool, tripRepository, producer, logger, appMetrics)
+	publisher := events.NewOutboxPublisher(pool, outboxRepository, producer, logger, appMetrics)
 	publisherCtx, stopPublisher := context.WithCancel(ctx)
 	publisherDone := make(chan struct{})
 	go func() {

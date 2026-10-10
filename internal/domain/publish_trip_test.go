@@ -19,13 +19,13 @@ func TestNewEventID(t *testing.T) {
 		{
 			name:      "same trip and event type keep the key",
 			tripID:    "11111111-1111-4111-8111-111111111111",
-			eventType: "TripPublished",
+			eventType: EventTypeTripPublished,
 			want:      "59fb3430-6e67-5f95-8b93-c51508f081b3",
 		},
 		{
 			name:      "another trip has another key",
 			tripID:    "22222222-2222-4222-8222-222222222222",
-			eventType: "TripPublished",
+			eventType: EventTypeTripPublished,
 			want:      "bbbb58bd-d96d-5658-9a4d-52bbd5fb1dd8",
 		},
 		{

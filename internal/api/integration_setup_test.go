@@ -120,7 +120,8 @@ func newTestFixtureWithContracts(contracts service.ContractChecker) testFixture 
 	appMetrics := observability.New(registry)
 
 	tripRepository := repo.NewPostgresTripRepository(testPool, appMetrics)
-	tripService := service.NewTripService(tripRepository, testPool, appMetrics, contracts)
+	outboxRepository := repo.NewPostgresOutboxRepository(testPool, appMetrics)
+	tripService := service.NewTripService(tripRepository, outboxRepository, testPool, appMetrics, contracts)
 
 	server := api.NewServer(tripService, testPool, registry)
 	clientID := uuid.New()

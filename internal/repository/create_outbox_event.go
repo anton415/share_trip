@@ -13,13 +13,13 @@ import (
 	observability "job4j.ru/share-trip/internal/observability/metrics"
 )
 
-func (r *PostgresTripRepository) CreateOutboxEvent(
+func (r *PostgresOutboxRepository) CreateOutboxEvent(
 	ctx context.Context,
 	tx pgx.Tx,
 	event domain.OutboxEvent,
 ) error {
-	ctx, span := otel.Tracer("TripRepository").
-		Start(ctx, "TripRepository.CreateOutboxEvent")
+	ctx, span := otel.Tracer("OutboxRepository").
+		Start(ctx, "OutboxRepository.CreateOutboxEvent")
 	defer span.End()
 
 	span.SetAttributes(
@@ -30,11 +30,12 @@ func (r *PostgresTripRepository) CreateOutboxEvent(
 	started := time.Now()
 	result := observability.ResultSuccess
 	defer func() {
-		r.observeQuery(
-			observability.RepositoryOperationOutboxEventCreate,
-			result,
-			started,
-		)
+		r.metrics.RepositoryQueryTotal.
+			WithLabelValues(observability.RepositoryOperationOutboxEventCreate, result).
+			Inc()
+		r.metrics.RepositoryQueryDuration.
+			WithLabelValues(observability.RepositoryOperationOutboxEventCreate, result).
+			Observe(time.Since(started).Seconds())
 	}()
 
 	_, err := tx.Exec(ctx, `
@@ -46,6 +47,7 @@ func (r *PostgresTripRepository) CreateOutboxEvent(
 			payload
 		)
 		VALUES ($1, $2, $3, $4, $5)
+		ON CONFLICT (id) DO NOTHING
 	`,
 		event.ID,
 		event.AggregateType,

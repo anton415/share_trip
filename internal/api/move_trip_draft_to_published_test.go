@@ -246,10 +246,11 @@ func TestServer_MoveTripDraftToPublished(t *testing.T) {
 
 		fixture := newTestFixture()
 		created := createDraftTrip(t, fixture)
-		tripRepository := &outboxFailureRepository{
-			TripRepository: repo.NewPostgresTripRepository(testPool, fixture.metrics),
+		tripRepository := repo.NewPostgresTripRepository(testPool, fixture.metrics)
+		outboxRepository := &outboxFailureRepository{
+			OutboxRepository: repo.NewPostgresOutboxRepository(testPool, fixture.metrics),
 		}
-		tripService := service.NewTripService(tripRepository, testPool, fixture.metrics,
+		tripService := service.NewTripService(tripRepository, outboxRepository, testPool, fixture.metrics,
 			checkServiceStub{result: service.CheckResult{Allowed: true}})
 		tripID, err := tripService.PublishTrip(testCtx, service.PublishTripCommand{
 			TripID:   created.ID,
@@ -281,7 +282,7 @@ func TestServer_MoveTripDraftToPublished(t *testing.T) {
 			SELECT id, payload->>'event_id' FROM outbox_events WHERE aggregate_id = $1
 		`, created.ID).Scan(&outboxID, &payloadEventID)
 		require.NoError(t, err)
-		require.Equal(t, tripRepository.eventID, outboxID)
+		require.Equal(t, outboxRepository.eventID, outboxID)
 		require.Equal(t, outboxID.String(), payloadEventID)
 	})
 }
@@ -293,7 +294,8 @@ func TestPublishTripOutboxMetadata(t *testing.T) {
 	fixture := newTestFixture()
 	trip := createDraftTrip(t, fixture)
 	tripService := service.NewTripService(
-		repo.NewPostgresTripRepository(testPool, fixture.metrics), testPool, fixture.metrics,
+		repo.NewPostgresTripRepository(testPool, fixture.metrics),
+		repo.NewPostgresOutboxRepository(testPool, fixture.metrics), testPool, fixture.metrics,
 		checkServiceStub{result: service.CheckResult{Allowed: true}},
 	)
 	const traceparent = "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01"
@@ -346,14 +348,14 @@ func TestServer_PublishTripContractRejection(t *testing.T) {
 }
 
 type outboxFailureRepository struct {
-	service.TripRepository
+	domain.OutboxRepository
 	eventID uuid.UUID
 }
 
 func (r *outboxFailureRepository) CreateOutboxEvent(ctx context.Context, tx pgx.Tx, event domain.OutboxEvent) error {
 	r.eventID = event.ID
 	event.Payload = json.RawMessage(`{`)
-	return r.TripRepository.CreateOutboxEvent(ctx, tx, event)
+	return r.OutboxRepository.CreateOutboxEvent(ctx, tx, event)
 }
 
 func sendMoveTripDraftToPublished(

@@ -65,7 +65,7 @@ func TestOutboxRepository(t *testing.T) {
 	require.NotNil(t, legacy.LastError)
 	require.Contains(t, *legacy.LastError, "original Kafka event_id and delivery status are unknown")
 	require.Nil(t, legacy.SentAt)
-	repository := repo.NewPostgresTripRepository(pool, nil)
+	repository := repo.NewPostgresOutboxRepository(pool, nil)
 
 	_, err = pool.Exec(ctx, `
 		INSERT INTO outbox_events (aggregate_type, aggregate_id, event_type, payload, created_at)

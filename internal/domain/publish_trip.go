@@ -76,13 +76,12 @@ func (u *TripUsecase) PublishTrip(
 		return nil, fmt.Errorf("tripRepo.Update: %w", err)
 	}
 
-	const eventType = "TripPublished"
-	eventID := newEventID(updatedTrip.ID, eventType)
+	eventID := newEventID(updatedTrip.ID, EventTypeTripPublished)
 	metadata := propagation.MapCarrier{}
 	propagation.TraceContext{}.Inject(ctx, metadata)
 	event := TripPublished{
 		EventID:       eventID.String(),
-		EventType:     eventType,
+		EventType:     EventTypeTripPublished,
 		CorrelationID: logctx.CorrelationID(ctx),
 		CausationID:   logctx.RequestID(ctx),
 		TraceParent:   metadata.Get("traceparent"),
@@ -96,7 +95,7 @@ func (u *TripUsecase) PublishTrip(
 		return nil, fmt.Errorf("marshal trip published payload: %w", err)
 	}
 
-	err = u.tripRepo.CreateOutboxEvent(ctx, tx, OutboxEvent{
+	err = u.outboxRepo.CreateOutboxEvent(ctx, tx, OutboxEvent{
 		ID:            eventID,
 		AggregateType: "trip",
 		AggregateID:   updatedTrip.ID,
@@ -104,7 +103,7 @@ func (u *TripUsecase) PublishTrip(
 		Payload:       payload,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("tripRepo.CreateOutboxEvent: %w", err)
+		return nil, fmt.Errorf("outboxRepo.CreateOutboxEvent: %w", err)
 	}
 
 	return &PublishTripResponse{TripID: updatedTrip.ID}, nil

@@ -28,15 +28,15 @@ type TripRepository interface {
 	Create(ctx context.Context, tx pgx.Tx, trip Trip) (Trip, error)
 	GetForUpdateByID(ctx context.Context, tx pgx.Tx, id uuid.UUID) (Trip, error)
 	Update(ctx context.Context, tx pgx.Tx, trip Trip) (Trip, error)
-	CreateOutboxEvent(ctx context.Context, tx pgx.Tx, event OutboxEvent) error
 }
 
 type TripUsecase struct {
-	tripRepo TripRepository
+	tripRepo   TripRepository
+	outboxRepo OutboxRepository
 }
 
-func NewTripUsecase(tripRepo TripRepository) *TripUsecase {
-	return &TripUsecase{tripRepo: tripRepo}
+func NewTripUsecase(tripRepo TripRepository, outboxRepo OutboxRepository) *TripUsecase {
+	return &TripUsecase{tripRepo: tripRepo, outboxRepo: outboxRepo}
 }
 
 func (u *TripUsecase) CreateTrip(

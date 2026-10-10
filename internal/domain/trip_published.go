@@ -2,6 +2,8 @@ package domain
 
 import "time"
 
+const EventTypeTripPublished = "TripPublished"
+
 type TripPublished struct {
 	EventID       string    `json:"event_id"`
 	EventType     string    `json:"event_type"`
