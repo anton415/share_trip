@@ -1,0 +1,333 @@
+---
+openapi: 3.0.3
+info:
+  title: Отправить корпоративную поездку на согласование
+  version: 1.0.0
+  description: 'Проект контрольного задания; операция пока не реализована. Владелец:
+    sharetrip'
+servers:
+- url: https://sharetrip.example.test
+security:
+- bearerAuth: []
+paths:
+  "/trip/{trip_id}/submit-for-approval":
+    post:
+      operationId: submit_trip_for_approval
+      summary: Отправить корпоративную поездку на согласование
+      description: |
+        Только автор поездки своей компании; руководитель берётся из доверенного manager_id. Разрешение trip_creation проверяется по company_id.
+        Область уникальности ключа: (company_id, actor_id, submit_trip_for_approval, trip_id, Idempotency-Key). Клиент создаёт UUID до первой попытки.
+        Результат и hash канонического JSON хранятся в PostgreSQL сервиса: полный ответ 30 суток,
+        затем ключ и hash до удаления агрегата. Тот же ключ и тело возвращают исходный статус
+        и JSON; другое тело даёт 409 IDEMPOTENCY_KEY_REUSED; старый ключ без тела ответа —
+        409 IDEMPOTENCY_KEY_EXPIRED. Проверка полномочий выполняется также перед replay.
+        Незавершённый конкурентный запрос после ожидания до 1 секунды даёт 409 REQUEST_IN_PROGRESS.
+        Успех и окончательные бизнес-отказы сохраняются; 400/401, отказы авторизации, 404,
+        REQUEST_IN_PROGRESS, 429 и технические 5xx не кэшируются. Повторный успех не создаёт событие.
+        Ответ, бизнес-изменение и outbox фиксируются одной локальной транзакцией.
+        Сохранённый ответ ищется до вызова contract. Разные ключи защищены блокировкой поездки и переходом только из draft; второй submit не создаёт активную заявку.
+      parameters:
+      - name: trip_id
+        in: path
+        required: true
+        description: Идентификатор поездки.
+        schema:
+          type: string
+          format: uuid
+        example: 44444444-4444-4444-8444-444444444444
+      - name: Idempotency-Key
+        in: header
+        required: true
+        description: 'UUID одного намерения. Не менять при timeout/retry. Область:
+          (company_id, actor_id, submit_trip_for_approval, trip_id, Idempotency-Key)'
+        schema:
+          type: string
+          format: uuid
+        example: 88888888-8888-4888-8888-888888888888
+      - name: traceparent
+        in: header
+        required: false
+        description: W3C trace context. Не является ключом идемпотентности.
+        schema:
+          type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              "$ref": "#/components/schemas/Request"
+            example:
+              trip_version: 7
+      responses:
+        '202':
+          description: Отправка сохранена вместе с outbox; создание заявки выполняется
+            асинхронно.
+          headers:
+            Idempotency-Replayed:
+              description: true при возврате сохранённого ответа, false при первом
+                выполнении.
+              schema:
+                type: boolean
+            X-Correlation-ID:
+              description: Сохранённый идентификатор процесса согласования.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Result"
+              example:
+                trip_id: 44444444-4444-4444-8444-444444444444
+                approval_id: 55555555-5555-4555-8555-555555555555
+                correlation_id: 22222222-2222-4222-8222-222222222222
+                status: approval_pending
+                trip_version: 8
+                submitted_at: '2026-10-12T09:00:00Z'
+                expires_at: '2026-10-13T09:00:00Z'
+        '400':
+          description: 'Некорректные UUID, JSON, обязательные поля или Idempotency-Key.
+            Не кэшируется. Коды: INVALID_REQUEST, INVALID_IDEMPOTENCY_KEY.'
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+              example:
+                code: INVALID_REQUEST
+                message: Некорректные UUID, JSON, обязательные поля или Idempotency-Key
+        '401':
+          description: 'Нет действительного Bearer-токена. Не кэшируется. Коды: UNAUTHENTICATED.'
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+              example:
+                code: UNAUTHENTICATED
+                message: Нет действительного Bearer-токена
+        '403':
+          description: 'Нет прав автора либо contract запретил услугу. Договорные
+            отказы кэшируются; после изменения договора нужен новый ключ. Коды: FORBIDDEN,
+            CONTRACT_NOT_FOUND, CONTRACT_NOT_ACTIVE, CONTRACT_EXPIRED, SERVICE_NOT_ALLOWED.'
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+              example:
+                code: FORBIDDEN
+                message: Нет прав автора либо contract запретил услугу
+          headers:
+            Idempotency-Replayed:
+              description: true при возврате сохранённого бизнес-отказа. Не возвращается
+                для некэшируемых отказов.
+              schema:
+                type: boolean
+        '404':
+          description: 'Поездка не найдена или недоступна в компании пользователя.
+            Ответ не кэшируется. Коды: NOT_FOUND.'
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+              example:
+                code: NOT_FOUND
+                message: Поездка не найдена или недоступна в компании пользователя
+        '409':
+          description: 'Конфликт ключа или состояния. REQUEST_IN_PROGRESS допускает
+            повтор того же ключа после Retry-After; остальные конфликты не требуют
+            автоматического повтора. current_status передаётся при конфликте состояния.
+            Коды: IDEMPOTENCY_KEY_REUSED, IDEMPOTENCY_KEY_EXPIRED, REQUEST_IN_PROGRESS,
+            ACTIVE_APPROVAL_EXISTS, TRIP_VERSION_CONFLICT, TRIP_NOT_DRAFT.'
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+              example:
+                code: IDEMPOTENCY_KEY_REUSED
+                message: Конфликт ключа или состояния
+          headers:
+            Retry-After:
+              description: Задержка в секундах. Для 409 присутствует только при REQUEST_IN_PROGRESS
+                (1 секунда).
+              schema:
+                type: integer
+                minimum: 1
+              example: 1
+            Idempotency-Replayed:
+              description: true при возврате сохранённого бизнес-отказа. Не возвращается
+                для некэшируемых отказов.
+              schema:
+                type: boolean
+        '422':
+          description: 'Бизнес-предусловия отправки не выполнены. Исправить черновик/назначение
+            и использовать новый ключ. Коды: TRIP_NOT_READY, APPROVER_NOT_ASSIGNED.'
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+              example:
+                code: TRIP_NOT_READY
+                message: Бизнес-предусловия отправки не выполнены
+          headers:
+            Idempotency-Replayed:
+              description: true при возврате сохранённого бизнес-отказа. Не возвращается
+                для некэшируемых отказов.
+              schema:
+                type: boolean
+        '429':
+          description: 'Превышен лимит запросов. Повторить тот же ключ после Retry-After.
+            Не кэшируется. Коды: RATE_LIMITED.'
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+              example:
+                code: RATE_LIMITED
+                message: Превышен лимит запросов
+          headers:
+            Retry-After:
+              description: Задержка в секундах. Для 409 присутствует только при REQUEST_IN_PROGRESS
+                (1 секунда).
+              schema:
+                type: integer
+                minimum: 1
+              example: 1
+        '500':
+          description: 'Внутренняя ошибка; исход commit может быть неизвестен. Повторить
+            тот же ключ. Не кэшируется. Коды: INTERNAL_ERROR.'
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+              example:
+                code: INTERNAL_ERROR
+                message: Внутренняя ошибка; исход commit может быть неизвестен
+        '502':
+          description: 'Некорректный ответ contract. Отправка не принята. Техническая
+            ошибка не кэшируется. Коды: CONTRACT_INVALID_RESPONSE.'
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+              example:
+                code: CONTRACT_INVALID_RESPONSE
+                message: Некорректный ответ contract
+        '503':
+          description: 'Недоступна собственная БД либо contract, включая исчерпанный
+            deadline его проверки. Повторить тот же ключ после Retry-After. Не кэшируется.
+            Коды: DATABASE_UNAVAILABLE, CONTRACT_UNAVAILABLE.'
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+              example:
+                code: DATABASE_UNAVAILABLE
+                message: Недоступна собственная БД либо contract, включая исчерпанный
+                  deadline его проверки
+          headers:
+            Retry-After:
+              description: Задержка в секундах. Для 409 присутствует только при REQUEST_IN_PROGRESS
+                (1 секунда).
+              schema:
+                type: integer
+                minimum: 1
+              example: 1
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  schemas:
+    Request:
+      type: object
+      required:
+      - trip_version
+      properties:
+        trip_version:
+          type: integer
+          format: int64
+          minimum: 1
+          description: Ожидаемая текущая версия черновика из GET поездки.
+      additionalProperties: false
+    Result:
+      type: object
+      required:
+      - approval_id
+      - trip_id
+      - status
+      - correlation_id
+      - trip_version
+      - submitted_at
+      - expires_at
+      properties:
+        approval_id:
+          type: string
+          format: uuid
+        trip_id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum:
+          - approval_pending
+        correlation_id:
+          type: string
+          format: uuid
+        trip_version:
+          type: integer
+          format: int64
+          minimum: 1
+          description: Версия после перехода в approval_pending.
+        submitted_at:
+          type: string
+          format: date-time
+        expires_at:
+          type: string
+          format: date-time
+      additionalProperties: false
+    Error:
+      type: object
+      required:
+      - code
+      - message
+      properties:
+        code:
+          type: string
+          enum:
+          - INVALID_REQUEST
+          - INVALID_IDEMPOTENCY_KEY
+          - UNAUTHENTICATED
+          - FORBIDDEN
+          - CONTRACT_NOT_FOUND
+          - CONTRACT_NOT_ACTIVE
+          - CONTRACT_EXPIRED
+          - SERVICE_NOT_ALLOWED
+          - NOT_FOUND
+          - IDEMPOTENCY_KEY_REUSED
+          - IDEMPOTENCY_KEY_EXPIRED
+          - REQUEST_IN_PROGRESS
+          - ACTIVE_APPROVAL_EXISTS
+          - TRIP_VERSION_CONFLICT
+          - TRIP_NOT_DRAFT
+          - RATE_LIMITED
+          - INTERNAL_ERROR
+          - DATABASE_UNAVAILABLE
+          - CONTRACT_UNAVAILABLE
+          - TRIP_NOT_READY
+          - APPROVER_NOT_ASSIGNED
+          - CONTRACT_INVALID_RESPONSE
+        message:
+          type: string
+        current_status:
+          type: string
+          enum:
+          - draft
+          - approval_pending
+          - published
+          - started
+          - pending
+          - approved
+          - rejected
+          - cancelled
+          - expired
+      additionalProperties: false
